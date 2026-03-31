@@ -10,6 +10,8 @@
   <p align="center">
     <img src="https://img.shields.io/badge/ABAP-7.58+-blue" alt="ABAP 7.58+"/>
     <img src="https://img.shields.io/badge/Test262-45%2F45-brightgreen" alt="Test262 45/45"/>
+    <img src="https://img.shields.io/badge/Go_tests-99-brightgreen" alt="99 Go tests"/>
+    <img src="https://img.shields.io/badge/SAP_tests-17%2F17-brightgreen" alt="17/17 SAP tests"/>
     <img src="https://img.shields.io/badge/LOC-2100-lightgrey" alt="2100 lines"/>
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"/>
   </p>
@@ -26,7 +28,7 @@ DATA(lv) = zcl_mjs=>eval( |console.log(6 * 7)| ).
 
 ZMJS is a tree-walking JavaScript interpreter that runs **entirely inside SAP**. You pass it a JavaScript source string, it tokenizes, parses into an AST, evaluates — and returns the captured `console.log` output. All in ~2,100 lines of ABAP.
 
-It supports enough of JavaScript to run real-world JS code on SAP — things like the [abaplint](https://github.com/larshp/abaplint) lexer, recursive algorithms, classes with constructors, closures, and more.
+It supports enough of JavaScript to run real-world JS code on SAP — things like the [abaplint](https://github.com/abaplint/abaplint) lexer, recursive algorithms, classes with inheritance, closures, arrow functions, template literals, and more.
 
 ## Usage
 
@@ -51,21 +53,38 @@ DATA(lv) = zcl_mjs=>eval( lv_js ).
 " lv = "6765\n"
 ```
 
-### Classes
+### Classes with Inheritance
 
 ```abap
 DATA(lv_js) =
-  `class Point {`                                       && cl_abap_char_utilities=>newline &&
-  `  constructor(x, y) { this.x = x; this.y = y; }`    && cl_abap_char_utilities=>newline &&
-  `  distance() {`                                      && cl_abap_char_utilities=>newline &&
-  `    return (this.x * this.x + this.y * this.y);`     && cl_abap_char_utilities=>newline &&
-  `  }`                                                 && cl_abap_char_utilities=>newline &&
-  `}`                                                   && cl_abap_char_utilities=>newline &&
-  `let p = new Point(3, 4);`                            && cl_abap_char_utilities=>newline &&
-  `console.log(p.distance());`.
+  `class Animal {`                                            && cl_abap_char_utilities=>newline &&
+  `  constructor(name) { this.name = name; }`                 && cl_abap_char_utilities=>newline &&
+  `  speak() { return this.name + " makes a sound"; }`       && cl_abap_char_utilities=>newline &&
+  `}`                                                         && cl_abap_char_utilities=>newline &&
+  `class Dog extends Animal {`                                && cl_abap_char_utilities=>newline &&
+  `  speak() { return this.name + " barks"; }`               && cl_abap_char_utilities=>newline &&
+  `}`                                                         && cl_abap_char_utilities=>newline &&
+  `let d = new Dog("Rex");`                                   && cl_abap_char_utilities=>newline &&
+  `console.log(d.speak());`.
 
 DATA(lv) = zcl_mjs=>eval( lv_js ).
-" lv = "25\n"
+" lv = "Rex barks\n"
+```
+
+### Arrow Functions & Modern JS
+
+```abap
+DATA(lv_js) =
+  `const nums = [1, 2, 3, 4, 5];`                            && cl_abap_char_utilities=>newline &&
+  `const sum = (...args) => {`                                && cl_abap_char_utilities=>newline &&
+  `  let s = 0;`                                              && cl_abap_char_utilities=>newline &&
+  `  for (const x of args) s = s + x;`                       && cl_abap_char_utilities=>newline &&
+  `  return s;`                                               && cl_abap_char_utilities=>newline &&
+  `};`                                                        && cl_abap_char_utilities=>newline &&
+  `console.log(sum(...nums));`.
+
+DATA(lv) = zcl_mjs=>eval( lv_js ).
+" lv = "15\n"
 ```
 
 ### Load JS from SMW0
@@ -83,14 +102,17 @@ DATA(lv_result) = zcl_mjs=>eval( lv_js && cl_abap_char_utilities=>newline && `co
 <table>
 <tr><td><b>Data Types</b></td><td>Numbers (float64), strings, booleans, null, undefined, objects, arrays</td></tr>
 <tr><td><b>Variables</b></td><td><code>let</code>, <code>var</code>, <code>const</code></td></tr>
-<tr><td><b>Operators</b></td><td><code>+ - * / %</code> &nbsp; <code>< > <= >= === !== == !=</code> &nbsp; <code>&& || !</code></td></tr>
+<tr><td><b>Operators</b></td><td><code>+ - * / %</code> &nbsp; <code>< > <= >= === !== == !=</code> &nbsp; <code>&& || ! ?? ?.</code> &nbsp; <code>? :</code></td></tr>
 <tr><td><b>Strings</b></td><td><code>.length</code> <code>.charAt()</code> <code>.charCodeAt()</code> <code>.indexOf()</code> <code>.substring()</code></td></tr>
-<tr><td><b>Control Flow</b></td><td><code>if/else</code> &nbsp; <code>while</code> &nbsp; <code>for</code> &nbsp; <code>switch/case</code> &nbsp; <code>break</code> &nbsp; <code>continue</code></td></tr>
-<tr><td><b>Functions</b></td><td>Declarations, closures, recursion, <code>return</code></td></tr>
+<tr><td><b>Template Literals</b></td><td><code>`hello ${name}, ${1+2}`</code></td></tr>
+<tr><td><b>Control Flow</b></td><td><code>if/else</code> &nbsp; <code>while</code> &nbsp; <code>for</code> &nbsp; <code>for...of</code> &nbsp; <code>for...in</code> &nbsp; <code>switch/case</code> &nbsp; <code>break</code> &nbsp; <code>continue</code></td></tr>
+<tr><td><b>Functions</b></td><td>Declarations, expressions, arrow functions <code>() => {}</code>, closures, recursion</td></tr>
+<tr><td><b>Rest/Spread</b></td><td><code>function f(...args)</code> &nbsp; <code>[...a, ...b]</code></td></tr>
+<tr><td><b>Error Handling</b></td><td><code>throw</code> &nbsp; <code>try/catch/finally</code> &nbsp; <code>new Error(msg)</code></td></tr>
 <tr><td><b>Objects</b></td><td>Literals <code>{x:1}</code>, property access <code>.x</code> / <code>["x"]</code>, assignment</td></tr>
 <tr><td><b>Arrays</b></td><td>Literals <code>[1,2,3]</code>, <code>.push()</code>, <code>.length</code>, index access</td></tr>
-<tr><td><b>Classes</b></td><td><code>class</code> with <code>constructor</code> and methods, <code>new</code></td></tr>
-<tr><td><b>Other</b></td><td><code>typeof</code> &nbsp; <code>console.log</code> (output capture)</td></tr>
+<tr><td><b>Classes</b></td><td><code>class</code> with <code>constructor</code>, methods, <code>static</code>, <code>extends</code>, <code>new</code></td></tr>
+<tr><td><b>Other</b></td><td><code>typeof</code> &nbsp; <code>console.log</code> &nbsp; <code>undefined</code> <code>null</code> <code>Infinity</code> <code>NaN</code></td></tr>
 </table>
 
 ## Why Run JS on SAP?
@@ -101,7 +123,7 @@ DATA(lv_result) = zcl_mjs=>eval( lv_js && cl_abap_char_utilities=>newline && `co
 | **Embeddable scripting** | Let users write business rules in JS without custom ABAP development — store scripts in a table, eval at runtime |
 | **Cross-platform logic** | Write validation/transformation logic once in JS, run it in the browser AND on SAP |
 | **AI agent tooling** | Let AI agents generate and execute JS snippets on SAP for data processing and analysis |
-| **Offline linting** | Run [abaplint](https://github.com/larshp/abaplint)'s lexer/parser on SAP to analyze ABAP code without external tools |
+| **Offline linting** | Run [abaplint](https://github.com/abaplint/abaplint)'s lexer/parser on SAP to analyze ABAP code without external tools |
 
 ### Proven: abaplint Lexer on SAP
 
@@ -118,7 +140,7 @@ The abaplint JavaScript lexer (~130 lines) runs through ZMJS on SAP, correctly t
                     |              output capture
                [Parser]                |
             recursive descent          |
-            26 node types              |
+            30 node types              |
                     |                  |
               [Evaluator]              |
            tree-walking interp.        |
@@ -131,12 +153,12 @@ The abaplint JavaScript lexer (~130 lines) runs through ZMJS on SAP, correctly t
 
 | Class | LOC | Role |
 |-------|-----|------|
-| `ZIF_MJS` | 105 | Types & constants (26 AST node kinds, value types) |
+| `ZIF_MJS` | 105 | Types & constants (30 AST node kinds, value types) |
 | `ZCL_MJS_OBJ` | 56 | JS object — hashed property table |
 | `ZCL_MJS_ARR` | 28 | JS array — ordered value list |
 | `ZCL_MJS_ENV` | 100 | Scope chain — variable lookup with parent chain, output buffer |
-| `ZCL_MJS_PARSER` | 817 | Tokenizer (strings, numbers, idents, operators) + recursive descent parser |
-| `ZCL_MJS` | 1046 | **Entry point** — `eval()` method, evaluator, built-in methods |
+| `ZCL_MJS_PARSER` | 817 | Tokenizer + recursive descent parser |
+| `ZCL_MJS` | 1046 | **Entry point** — `eval()`, evaluator, built-in methods |
 
 ## Benchmarks
 
@@ -153,7 +175,26 @@ Measured on SAP NetWeaver AS ABAP 7.58 (CAL instance, 4 vCPU):
 
 > Tree-walking interpreters trade speed for simplicity. ZMJS is fast enough for scripting, configuration, and running small JS libraries. It's not meant for compute-heavy workloads.
 
-## Test262 Conformance
+## Tests
+
+### Go tests (reference implementation)
+
+99 tests covering all language features — run with `go test ./pkg/jseval/` in the [vibing-steampunk](https://github.com/oisee/vibing-steampunk) repo.
+
+### SAP ABAP unit tests
+
+17 test methods in `ZCL_MJS` test include, all passing on SAP:
+
+```
+test_2plus2, test_string, test_if_else, test_function, test_factorial,
+test_closure, test_object, test_array, test_class, test_for_loop,
+test_while_continue, test_switch, test_typeof, test_string_methods,
+test_or_chain, test_space_handling, test262 (44 JS-level assertions)
+```
+
+Plus `ZMJS_BENCHMARK` program with Test262 suite + benchmarks.
+
+### Test262 Conformance
 
 45 tests inspired by the [ECMAScript Language Specification](https://tc39.es/ecma262/):
 
@@ -166,8 +207,6 @@ Measured on SAP NetWeaver AS ABAP 7.58 (CAL instance, 4 vCPU):
   Closures (counter)      Array ops               Object property access
   String methods          Class + constructor     Method calls
 ```
-
-Run the included `ZMJS_BENCHMARK` program as ABAP Unit Test to verify.
 
 ## Installation
 
@@ -196,15 +235,13 @@ Create objects in this order (respects dependencies):
 What ZMJS does **not** support (yet):
 
 - `++` / `--` operators (use `i = i + 1`)
-- Ternary operator `? :`
-- `try` / `catch` / `throw`
 - Regular expressions
-- `for...in` / `for...of`
-- Destructuring, spread, rest, arrow functions
-- `Date`, `Math`, `JSON`, `parseInt` built-ins
+- Destructuring assignments
+- `Date`, `Math`, `JSON`, `parseInt`, `Array.isArray` built-ins
 - Module system (`import` / `export`)
 - Prototype chain (classes use simple property copy)
 - Async / Promises / generators
+- Getters / setters
 
 ## License
 
