@@ -214,4 +214,6 @@ What ZMJS does **not** support (yet):
 
 Built with [Claude Code](https://claude.ai/claude-code) (Anthropic).
 
-Inspired by [abaplint](https://github.com/larshp/abaplint) by Lars Hvam.
+**Clean room implementation** — the interpreter (tokenizer, parser, evaluator) was written from scratch as a tree-walking interpreter, following the classic approach described in [Crafting Interpreters](https://craftinginterpreters.com/) by Robert Nystrom. No code was copied from any existing JS engine.
+
+The [abaplint](https://github.com/abaplint/abaplint) lexer by [Lars Hvam](https://github.com/larshp) (MIT license) is used as a real-world test case — the JS lexer code runs through ZMJS on SAP to tokenize ABAP source.
