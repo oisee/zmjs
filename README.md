@@ -97,6 +97,46 @@ DATA(lv_js) = cl_abap_conv_codepage=>create_in( codepage = 'UTF-8' )->convert( l
 DATA(lv_result) = zcl_mjs=>eval( lv_js && cl_abap_char_utilities=>newline && `console.log("done");` ).
 ```
 
+### Feature Demo: ABAP → JS → ABAP (transpiled execution)
+
+ZMJS can execute JavaScript produced by the [abaplint transpiler](https://github.com/abaplint/transpiler). This means you can write ABAP, transpile it to JS offline, and run it through ZMJS on SAP:
+
+**Step 1: Write ABAP**
+```abap
+REPORT zdemo.
+DATA lv_sum TYPE i.
+DATA lv_i TYPE i.
+lv_sum = 0. lv_i = 1.
+WHILE lv_i <= 10.
+  lv_sum = lv_sum + lv_i.
+  lv_i = lv_i + 1.
+ENDWHILE.
+WRITE lv_sum.
+```
+
+**Step 2: Transpile** (offline, via `npx @abaplint/transpiler-cli`)
+```javascript
+// Generated JS:
+let lv_sum = new abap.types.Integer({});
+let lv_i = new abap.types.Integer({});
+lv_sum.set(abap.IntegerFactory.get(0));
+lv_i.set(abap.IntegerFactory.get(1));
+while (abap.compare.le(lv_i, abap.IntegerFactory.get(10))) {
+  lv_sum.set(abap.operators.add(lv_sum, lv_i));
+  lv_i.set(abap.operators.add(lv_i, abap.IntegerFactory.get(1)));
+}
+abap.statements.write(lv_sum);
+```
+
+**Step 3: Run on SAP** (runtime shim + transpiled JS → `zcl_mjs=>eval()`)
+```abap
+" Load runtime shim + transpiled JS from SMW0 or string
+DATA(lv_result) = zcl_mjs=>eval( lv_runtime_shim && lv_transpiled_js ).
+" lv_result = "55"
+```
+
+The [abaplint lexer](https://github.com/abaplint/abaplint) also runs directly through ZMJS, tokenizing real ABAP source code on SAP (155 tokens in 59ms).
+
 ## Language Support
 
 <table>
