@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout zmjs
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Clone test262
+        run: |
+          git clone --depth=1 https://github.com/tc39/test262.git /tmp/test262
+          echo "test262 cloned: $(find /tmp/test262/test/language -name '*.js' | wc -l) JS files"
+
+      - name: Run Go tests + test262
+        env:
+          TEST262_PATH: /tmp/test262
+          TEST262_MIN_PASS: "50"
+        run: go test ./pkg/jseval/ -v -run . -timeout 120s
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ZMJS test262 results" >> $GITHUB_STEP_SUMMARY
+          go test ./pkg/jseval/ -run TestTest262 -v \
+            -timeout 120s 2>&1 | grep "test262:" \
+            >> $GITHUB_STEP_SUMMARY || true
+        env:
+          TEST262_PATH: /tmp/test262
