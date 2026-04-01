@@ -110,6 +110,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_ch  TYPE c LENGTH 1.
     DATA lv_j   TYPE i.
     DATA ls_tok TYPE zif_mjs=>ty_token.
+    DATA lv_ni  TYPE i.
 
     lv_len = strlen( iv_src ).
 
@@ -139,7 +140,6 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       " Number: decimal, hex (0x/0X), scientific (1e5)
       IF lv_ch >= `0` AND lv_ch <= `9`.
-        DATA lv_ni   TYPE i.
         DATA lv_d    TYPE c LENGTH 1.
         DATA lv_numlen TYPE i.
         DATA lv_echar  TYPE c LENGTH 1.
@@ -555,6 +555,8 @@ CLASS zcl_mjs IMPLEMENTATION.
   METHOD call_function.
     " ir_fn is REF TO zif_mjs=>ty_function - modifiable for lazy compile
     FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    FIELD-SYMBOLS <this> TYPE zif_mjs=>ty_value.
+
     ASSIGN ir_fn->* TO <fn>.
 
     " Lazy compile: assign variable slots on first call
@@ -584,7 +586,6 @@ CLASS zcl_mjs IMPLEMENTATION.
 
     " Bind 'this' in vars (not slots - special name, always slow-path)
     IF ir_this IS BOUND.
-      FIELD-SYMBOLS <this> TYPE zif_mjs=>ty_value.
       ASSIGN ir_this->* TO <this>.
       lo_call_env->define( iv_name = `this` is_val = <this> ).
     ENDIF.
