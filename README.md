@@ -10,9 +10,9 @@
   <p align="center">
     <img src="https://img.shields.io/badge/ABAP-7.58+-blue" alt="ABAP 7.58+"/>
     <img src="https://img.shields.io/badge/Test262-45%2F45-brightgreen" alt="Test262 45/45"/>
-    <img src="https://img.shields.io/badge/Go_test262-178%2F266-brightgreen" alt="178/266 Go test262"/>
+    <img src="https://img.shields.io/badge/Go_test262-233%2F266-brightgreen" alt="233/266 Go test262"/>
     <img src="https://img.shields.io/badge/SAP_tests-21%2F21-brightgreen" alt="21/21 SAP tests"/>
-    <img src="https://img.shields.io/badge/LOC-2800-lightgrey" alt="2800 lines"/>
+    <img src="https://img.shields.io/badge/LOC-2900-lightgrey" alt="2900 lines"/>
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"/>
   </p>
 </p>
@@ -152,8 +152,27 @@ The [abaplint lexer](https://github.com/abaplint/abaplint) also runs directly th
 <tr><td><b>Objects</b></td><td>Literals <code>{x:1}</code>, property access <code>.x</code> / <code>["x"]</code>, assignment</td></tr>
 <tr><td><b>Arrays</b></td><td>Literals <code>[1,2,3]</code>, <code>.push()</code>, <code>.length</code>, index access</td></tr>
 <tr><td><b>Classes</b></td><td><code>class</code> with <code>constructor</code>, methods, <code>static</code>, <code>extends</code>, <code>new</code></td></tr>
+<tr><td><b>Constructors</b></td><td><code>Boolean()</code> <code>Number()</code> <code>String()</code> — type coercion builtins</td></tr>
+<tr><td><b>String Escapes</b></td><td><code>\n \t \r \b \f \v \0 \xNN \uNNNN</code> — full escape sequence support</td></tr>
+<tr><td><b>Numeric Literals</b></td><td>Hex <code>0xFF</code>, scientific <code>1e3</code>, dot-prefix <code>.5</code></td></tr>
 <tr><td><b>Other</b></td><td><code>typeof</code> &nbsp; <code>console.log</code> &nbsp; <code>undefined</code> <code>null</code> <code>Infinity</code> <code>NaN</code></td></tr>
 </table>
+
+## What's New in v0.3.x
+
+**v0.3.1** (2026-04-01):
+- `finally` blocks now execute (previously no-op)
+- `var` declarations inside `catch` blocks propagate to outer scope
+- String escapes: `\r` `\b` `\f` `\v` `\0` `\xNN` `\uNNNN`
+- `Boolean()` / `Number()` / `String()` constructors
+- **Variable slot optimization** in Go reference impl: 1.45x speedup (fib 155ms → 107ms) by replacing hash map lookups with integer-indexed slot arrays
+- test262: **233/266** (was 178 in v0.2.0)
+
+**v0.3.0** (2026-04-01):
+- `try/catch/throw` — fully working exception handling
+- `finally` blocks parsed (execution added in v0.3.1)
+- Function expressions in expression position
+- Comma operator in for-loop bodies
 
 ## Why Run JS on SAP?
 
@@ -214,6 +233,12 @@ Measured on SAP NetWeaver AS ABAP 7.58 (CAL instance, 4 vCPU):
 | abaplint lexer | 155 tokens | **59ms** | Real ABAP class source |
 | Test262 suite | **45/45** | <1ms | Conformance tests |
 
+**Go reference implementation** (with variable slot optimization):
+
+| Benchmark | Time | Notes |
+|-----------|------|-------|
+| `fib(25)` | **~107ms** | 242K recursive calls, 1.45x speedup vs baseline |
+
 > Tree-walking interpreters trade speed for simplicity. ZMJS is fast enough for scripting, configuration, and running small JS libraries. It's not meant for compute-heavy workloads.
 
 ## Tests
@@ -242,8 +267,9 @@ bench_fib (fib(20)=6765 in ~450ms), bench_loop (10K iters in ~150ms)
 
 ### Test262 Conformance
 
-45 tests inspired by the [ECMAScript Language Specification](https://tc39.es/ecma262/):
+Two levels of conformance testing:
 
+**SAP built-in suite** — 45 hand-written tests that ship with ZMJS (all passing):
 ```
   Numeric literals        typeof operator         Multiplicative ops
   Additive ops            String concatenation    Relational ops
@@ -253,6 +279,25 @@ bench_fib (fib(20)=6765 in ~450ms), bench_loop (10K iters in ~150ms)
   Closures (counter)      Array ops               Object property access
   String methods          Class + constructor     Method calls
 ```
+
+**Extended Go test262 suite** — 266 tests from real ECMAScript262 test cases,
+run against the Go reference implementation:
+
+| Version | Pass | Fail | Total |
+|---------|------|------|-------|
+| v0.1.0 | 130 | 136 | 266 |
+| v0.2.0 | 178 | 88 | 266 |
+| v0.3.0 | 231 | 35 | 266 |
+| **v0.3.1** | **233** | **33** | **266** |
+
+Categories covered: numeric literals (hex, scientific, dot-prefix), string escapes
+(`\r\b\f\v\0\xNN\uNNNN`), template literals, all operators, control flow, functions,
+closures, classes, `try/catch/finally`, `throw`, `Boolean()`/`Number()`/`String()`
+constructors, rest/spread, `for...of`, `for...in`, `switch`, and more.
+
+Remaining 33 failures documented in [`test262/GAPS.md`](test262/GAPS.md) —
+7 categories: `arguments` object, named function expression scoping, prototype chain,
+`valueOf` coercion, `do-while`, `delete`, unicode identifiers.
 
 ## Installation
 
@@ -282,11 +327,16 @@ Create objects in this order (respects dependencies):
 What ZMJS does **not** support (yet):
 
 - `++` / `--` operators (use `i = i + 1`)
+- `do-while` loops
+- Labeled `break` / `continue`
+- `delete` operator
+- `arguments` object inside functions
+- Prototype chain (`func.prototype` — classes use property copy instead)
+- `valueOf` coercion on objects in arithmetic expressions
 - Regular expressions
 - Destructuring assignments
 - `Date`, `Math`, `JSON`, `parseInt`, `Array.isArray` built-ins
 - Module system (`import` / `export`)
-- Prototype chain (classes use simple property copy)
 - Async / Promises / generators
 - Getters / setters
 
