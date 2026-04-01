@@ -19,6 +19,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_or_chain FOR TESTING.
     METHODS test_space_handling FOR TESTING.
     METHODS test_string_method_call FOR TESTING.
+    METHODS test_anonymous_class FOR TESTING.
     METHODS test262 FOR TESTING.
 
     METHODS trim
@@ -203,6 +204,24 @@ CLASS ltcl_test IMPLEMENTATION.
       CATCH cx_root INTO DATA(lx).
         cl_abap_unit_assert=>fail( |Expected zcx_mjs_runtime, but got { cl_abap_classdescr=>get_class_name( lx ) }| ).
     ENDTRY.
+  ENDMETHOD.
+
+  METHOD test_anonymous_class.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var FileFile = class {` && lv_nl &&
+      `  constructor(filename) {` && lv_nl &&
+      `    this.filename = filename;` && lv_nl &&
+      `  }` && lv_nl &&
+      `  getFilename() {` && lv_nl &&
+      `    return this.filename;` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `new FileFile("foo.txt");` && lv_nl &&
+      `console.log("Done");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |Done| ).
   ENDMETHOD.
 
   METHOD test262.
