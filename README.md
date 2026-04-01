@@ -9,10 +9,10 @@
   </p>
   <p align="center">
     <img src="https://img.shields.io/badge/ABAP-7.58+-blue" alt="ABAP 7.58+"/>
-    <img src="https://img.shields.io/badge/Test262-45%2F45-brightgreen" alt="Test262 45/45"/>
-    <img src="https://img.shields.io/badge/Go_test262-233%2F266-brightgreen" alt="233/266 Go test262"/>
+    <img src="https://img.shields.io/badge/ABAP_test262-230%2F266-brightgreen" alt="230/266 ABAP test262"/>
+    <img src="https://img.shields.io/badge/Go_test262-242%2F266-brightgreen" alt="242/266 Go test262"/>
     <img src="https://img.shields.io/badge/SAP_tests-21%2F21-brightgreen" alt="21/21 SAP tests"/>
-    <img src="https://img.shields.io/badge/LOC-2900-lightgrey" alt="2900 lines"/>
+    <img src="https://img.shields.io/badge/LOC-3100-lightgrey" alt="3100 lines"/>
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"/>
   </p>
 </p>
@@ -160,13 +160,28 @@ The [abaplint lexer](https://github.com/abaplint/abaplint) also runs directly th
 
 ## What's New in v0.3.x
 
+**v0.3.3** (2026-04-01): Performance — ABAP interpreter
+- **−28% fib(20)**: 525ms → 378ms
+- **−5% loop 10K**: 157ms → 149ms
+- Eliminated `arguments` object allocation for functions that don't use it
+- Args passed as `tt_value_slots` (direct values, no boxing overhead)
+- Inlined slot access in `eval_node` — no method dispatch for local variable reads/writes
+- Inlined trivial value constructors (`number_val`, `bool_val`, etc.)
+- Try/catch safety net around all `cl_abap_codepage=>convert_from` calls
+- ABAP test262: **230/266** on SAP
+
+**v0.3.2** (2026-04-01): Language + slot optimization — ABAP interpreter
+- **`arguments` object** — bound in every function call (unless shadowed by param)
+- **Short-circuit `&&` / `||` / `??`** — now returns the deciding operand value
+- **Variable slot optimization** in ABAP: integer-indexed slots replace per-call hash lookups
+- Go test262: **242/266** (was 233 in v0.3.1)
+
 **v0.3.1** (2026-04-01):
 - `finally` blocks now execute (previously no-op)
 - `var` declarations inside `catch` blocks propagate to outer scope
 - String escapes: `\r` `\b` `\f` `\v` `\0` `\xNN` `\uNNNN`
 - `Boolean()` / `Number()` / `String()` constructors
-- **Variable slot optimization** in Go reference impl: 1.45x speedup (fib 155ms → 107ms) by replacing hash map lookups with integer-indexed slot arrays
-- test262: **233/266** (was 178 in v0.2.0)
+- Go test262: **233/266** (was 178 in v0.2.0)
 
 **v0.3.0** (2026-04-01):
 - `try/catch/throw` — fully working exception handling
@@ -226,18 +241,18 @@ Measured on SAP NetWeaver AS ABAP 7.58 (CAL instance, 4 vCPU):
 
 | Benchmark | Result | Time | Notes |
 |-----------|--------|------|-------|
-| `fib(20)` | 6,765 | **449ms** | 21,891 recursive calls |
-| `fib(25)` | 75,025 | **4,332ms** | 242,785 recursive calls |
-| Loop sum 0..9999 | 49,995,000 | **146ms** | 10K iterations |
+| `fib(20)` | 6,765 | **378ms** | 21,891 recursive calls (v0.3.3, −28% vs v0.3.2) |
+| `fib(25)` | 75,025 | **~3,600ms** | 242,785 recursive calls |
+| Loop sum 0..9999 | 49,995,000 | **149ms** | 10K iterations (v0.3.3, −5% vs v0.3.2) |
 | String concat 1000x | 1,000 chars | **16ms** | |
 | abaplint lexer | 155 tokens | **59ms** | Real ABAP class source |
-| Test262 suite | **45/45** | <1ms | Conformance tests |
+| Test262 (266 tests) | **230/266** | **377ms** | Full ECMAScript conformance suite |
 
 **Go reference implementation** (with variable slot optimization):
 
 | Benchmark | Time | Notes |
 |-----------|------|-------|
-| `fib(25)` | **~107ms** | 242K recursive calls, 1.45x speedup vs baseline |
+| `fib(20)` | **~107ms** | Slot optimization, 1.45x speedup vs baseline |
 
 > Tree-walking interpreters trade speed for simplicity. ZMJS is fast enough for scripting, configuration, and running small JS libraries. It's not meant for compute-heavy workloads.
 
@@ -280,24 +295,26 @@ Two levels of conformance testing:
   String methods          Class + constructor     Method calls
 ```
 
-**Extended Go test262 suite** — 266 tests from real ECMAScript262 test cases,
-run against the Go reference implementation:
+**Full test262 suite** — 266 tests from real ECMAScript262 test cases,
+run on both the Go reference implementation and the SAP ABAP interpreter:
 
-| Version | Pass | Fail | Total |
-|---------|------|------|-------|
-| v0.1.0 | 130 | 136 | 266 |
-| v0.2.0 | 178 | 88 | 266 |
-| v0.3.0 | 231 | 35 | 266 |
-| **v0.3.1** | **233** | **33** | **266** |
+| Version | Go Pass | ABAP Pass | Fail | Total | Notes |
+|---------|---------|-----------|------|-------|-------|
+| v0.1.0 | 130 | — | 136 | 266 | |
+| v0.2.0 | 178 | — | 88 | 266 | |
+| v0.3.0 | 231 | — | 35 | 266 | try/catch/throw |
+| v0.3.1 | 233 | — | 33 | 266 | finally, string escapes |
+| v0.3.2 | **242** | — | 24 | 266 | arguments, slot opt |
+| **v0.3.3** | **242** | **230** | **36** | **266** | first ABAP run! |
 
 Categories covered: numeric literals (hex, scientific, dot-prefix), string escapes
 (`\r\b\f\v\0\xNN\uNNNN`), template literals, all operators, control flow, functions,
 closures, classes, `try/catch/finally`, `throw`, `Boolean()`/`Number()`/`String()`
-constructors, rest/spread, `for...of`, `for...in`, `switch`, and more.
+constructors, rest/spread, `for...of`, `for...in`, `switch`, `arguments` object, and more.
 
-Remaining 33 failures documented in [`test262/GAPS.md`](test262/GAPS.md) —
-7 categories: `arguments` object, named function expression scoping, prototype chain,
-`valueOf` coercion, `do-while`, `delete`, unicode identifiers.
+Remaining ABAP failures (36): `valueOf` coercion on functions/objects, `arguments.callee`,
+named function expression scoping, prototype chain, `do-while`, `delete`, unicode identifiers.
+See [`test262/GAPS.md`](test262/GAPS.md) for details.
 
 ## Installation
 
@@ -330,7 +347,7 @@ What ZMJS does **not** support (yet):
 - `do-while` loops
 - Labeled `break` / `continue`
 - `delete` operator
-- `arguments` object inside functions
+- `arguments.callee` (property on the arguments object)
 - Prototype chain (`func.prototype` — classes use property copy instead)
 - `valueOf` coercion on objects in arithmetic expressions
 - Regular expressions

@@ -257,20 +257,25 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_sbuf = lv_sbuf && cl_abap_char_utilities=>horizontal_tab.
               WHEN `r`.  " CR = 0x0D
                 lv_esc_xb = 13. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
               WHEN `b`.  " backspace = 0x08
                 lv_esc_xb = 8. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
               WHEN `f`.  " form feed = 0x0C
                 lv_esc_xb = 12. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
               WHEN `v`.  " vertical tab = 0x0B
                 lv_esc_xb = 11. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
               WHEN `0`.  " null = 0x00
                 lv_esc_xb = 0. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
-              WHEN `x`.  " \xNN - 2 hex digits
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
+              WHEN `x`.  " \xNN - 2 hex digits (0x00-0xFF, build proper UTF-8)
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 2 TIMES.
@@ -281,9 +286,20 @@ CLASS zcl_mjs IMPLEMENTATION.
                   lv_xh = lv_xh + 1.
                 ENDDO.
                 lv_j = lv_j + 2.
-                lv_esc_xb = lv_esc_cp. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
-              WHEN `u`.  " \uNNNN - 4 hex digits (BMP, single byte for 0x00-0x7F)
+                DATA lv_utf8x TYPE xstring.
+                DATA lv_ub1   TYPE x LENGTH 1.
+                DATA lv_ub2   TYPE x LENGTH 1.
+                DATA lv_ub3   TYPE x LENGTH 1.
+                IF lv_esc_cp < 128.
+                  lv_ub1 = lv_esc_cp. lv_utf8x = lv_ub1.
+                ELSE.
+                  lv_ub1 = 192 + lv_esc_cp / 64.
+                  lv_ub2 = 128 + lv_esc_cp MOD 64.
+                  CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
+                ENDIF.
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_utf8x ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
+              WHEN `u`.  " \uNNNN - 4 hex digits, BMP (U+0000-U+FFFF), build proper UTF-8
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 4 TIMES.
@@ -294,8 +310,20 @@ CLASS zcl_mjs IMPLEMENTATION.
                   lv_xh = lv_xh + 1.
                 ENDDO.
                 lv_j = lv_j + 4.
-                lv_esc_xb = lv_esc_cp. lv_esc_xs = lv_esc_xb.
-                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+                IF lv_esc_cp < 128.
+                  lv_ub1 = lv_esc_cp. lv_utf8x = lv_ub1.
+                ELSEIF lv_esc_cp < 2048.
+                  lv_ub1 = 192 + lv_esc_cp / 64.
+                  lv_ub2 = 128 + lv_esc_cp MOD 64.
+                  CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
+                ELSE.
+                  lv_ub1 = 224 + lv_esc_cp / 4096.
+                  lv_ub2 = 128 + ( lv_esc_cp / 64 ) MOD 64.
+                  lv_ub3 = 128 + lv_esc_cp MOD 64.
+                  CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_utf8x IN BYTE MODE.
+                ENDIF.
+                TRY. lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_utf8x ).
+                CATCH cx_sy_conversion_codepage. ENDTRY.
               WHEN `\`.
                 lv_sbuf = lv_sbuf && `\`.
               WHEN `'`.
@@ -621,8 +649,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         lv_pname = lv_param.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
+      CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
-      " sy-subrc <> 0 means missing arg → ls_pval stays cleared (undefined)
       lo_call_env->define( iv_name = lv_pname is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
@@ -1600,11 +1628,13 @@ CLASS zcl_mjs IMPLEMENTATION.
         " Do NOT descend into nested function body (separate 'arguments' scope)
 
       WHEN OTHERS.
-        IF scan_for_ident( ir_node = <n>-left   iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
-        IF scan_for_ident( ir_node = <n>-right  iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
-        IF scan_for_ident( ir_node = <n>-cond   iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
-        IF scan_for_ident( ir_node = <n>-init   iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
-        IF scan_for_ident( ir_node = <n>-update iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-left      iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-right     iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-cond      iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-init      iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-update    iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-object    iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+        IF scan_for_ident( ir_node = <n>-prop_expr iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
         LOOP AT <n>-body INTO DATA(lr_b).
           IF scan_for_ident( ir_node = lr_b iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
         ENDLOOP.
@@ -1615,6 +1645,9 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF scan_for_ident( ir_node = lr_a iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
         ENDLOOP.
         LOOP AT <n>-cases INTO DATA(ls_sc).
+          IF ls_sc-expr IS BOUND.
+            IF scan_for_ident( ir_node = ls_sc-expr iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
+          ENDIF.
           LOOP AT ls_sc-body INTO DATA(lr_cb).
             IF scan_for_ident( ir_node = lr_cb iv_name = iv_name ) = abap_true. rv_found = abap_true. RETURN. ENDIF.
           ENDLOOP.

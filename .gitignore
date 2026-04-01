@@ -2,3 +2,12 @@
 *.bak
 node_modules
 output
+
+# Local experiment sandbox — not committed.
+# Copy test JS files here to run experiments without touching the canonical test262/ bundle.
+# Current experiments:
+#   zmjs_test262.js  — full 266-test ECMAScript conformance suite
+#                      upload to SAP SMW0 as ZMJS_TEST262.JS and run via ZMJS_TEST262 (SA38)
+#                      current score: PASS=230 FAIL=36 TOTAL=266
+#   (add your own .js files here freely)
+_tmp/
