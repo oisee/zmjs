@@ -10,9 +10,9 @@
   <p align="center">
     <img src="https://img.shields.io/badge/ABAP-7.58+-blue" alt="ABAP 7.58+"/>
     <img src="https://img.shields.io/badge/Test262-45%2F45-brightgreen" alt="Test262 45/45"/>
-    <img src="https://img.shields.io/badge/Go_tests-99-brightgreen" alt="99 Go tests"/>
-    <img src="https://img.shields.io/badge/SAP_tests-17%2F17-brightgreen" alt="17/17 SAP tests"/>
-    <img src="https://img.shields.io/badge/LOC-2100-lightgrey" alt="2100 lines"/>
+    <img src="https://img.shields.io/badge/Go_test262-178%2F266-brightgreen" alt="178/266 Go test262"/>
+    <img src="https://img.shields.io/badge/SAP_tests-21%2F21-brightgreen" alt="21/21 SAP tests"/>
+    <img src="https://img.shields.io/badge/LOC-2800-lightgrey" alt="2800 lines"/>
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"/>
   </p>
 </p>
@@ -193,12 +193,13 @@ The abaplint JavaScript lexer (~130 lines) runs through ZMJS on SAP, correctly t
 
 | Class | LOC | Role |
 |-------|-----|------|
-| `ZIF_MJS` | 105 | Types & constants (30 AST node kinds, value types) |
-| `ZCL_MJS_OBJ` | 56 | JS object — hashed property table |
-| `ZCL_MJS_ARR` | 28 | JS array — ordered value list |
-| `ZCL_MJS_ENV` | 100 | Scope chain — variable lookup with parent chain, output buffer |
-| `ZCL_MJS_PARSER` | 817 | Tokenizer + recursive descent parser |
-| `ZCL_MJS` | 1046 | **Entry point** — `eval()`, evaluator, built-in methods |
+| `ZIF_MJS` | 106 | Types & constants (28 AST node kinds, value types) |
+| `ZCL_MJS_OBJ` | 55 | JS object — hashed property table |
+| `ZCL_MJS_ARR` | 27 | JS array — ordered value list |
+| `ZCL_MJS_ENV` | 99 | Scope chain — variable lookup with parent chain, output buffer |
+| `ZCX_MJS_THROW` | 20 | Exception class for JS `throw` (cx_no_check, carries JS value) |
+| `ZCL_MJS_PARSER` | 888 | Tokenizer + recursive descent parser |
+| `ZCL_MJS` | 1082 | **Entry point** — `eval()`, evaluator, built-in methods |
 
 ## Benchmarks
 
@@ -223,8 +224,9 @@ Measured on SAP NetWeaver AS ABAP 7.58 (CAL instance, 4 vCPU):
 
 ### SAP ABAP unit tests
 
-17 test methods in `ZCL_MJS` test include, all passing on SAP:
+21 test methods across two test classes, all passing on SAP:
 
+`ZCL_MJS` test include (17 methods):
 ```
 test_2plus2, test_string, test_if_else, test_function, test_factorial,
 test_closure, test_object, test_array, test_class, test_for_loop,
@@ -232,7 +234,11 @@ test_while_continue, test_switch, test_typeof, test_string_methods,
 test_or_chain, test_space_handling, test262 (44 JS-level assertions)
 ```
 
-Plus `ZMJS_BENCHMARK` program with Test262 suite + benchmarks.
+`ZMJS_BENCHMARK` program (4 methods):
+```
+test262 (45 assertions), test_try_catch (4 try/catch scenarios),
+bench_fib (fib(20)=6765 in ~450ms), bench_loop (10K iters in ~150ms)
+```
 
 ### Test262 Conformance
 
@@ -264,10 +270,11 @@ Create objects in this order (respects dependencies):
 1. ZCL_MJS_OBJ        (no dependencies)
 2. ZCL_MJS_ARR        (no dependencies)
 3. ZIF_MJS            (references OBJ, ARR)
-4. ZCL_MJS_ENV        (references ZIF_MJS)
-5. ZCL_MJS_PARSER     (references ZIF_MJS)
-6. ZCL_MJS            (references all above)
-7. ZMJS_BENCHMARK     (optional — test program)
+4. ZCX_MJS_THROW      (references ZIF_MJS)
+5. ZCL_MJS_ENV        (references ZIF_MJS)
+6. ZCL_MJS_PARSER     (references ZIF_MJS)
+7. ZCL_MJS            (references all above)
+8. ZMJS_BENCHMARK     (optional — test program)
 ```
 
 ## Limitations
