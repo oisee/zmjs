@@ -4,6 +4,27 @@ All notable changes to ZMJS are documented here.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-04-01
+
+### Added
+- **`finally` blocks** — now fully execute (previously parsed and silently discarded)
+  - `try { } catch(e) { } finally { }` — finally runs after try/catch regardless of exception
+  - `try { } finally { }` (no catch) — finally runs, then exception re-propagates
+- **`var` hoisting from catch** — `var` declarations inside `catch` blocks now visible in outer scope
+- **String escape sequences** — `\r` `\b` `\f` `\v` `\0` `\xNN` `\uNNNN` now decoded correctly
+- **`Boolean()` constructor** — `Boolean(0)` → false, `Boolean("")` → false, `Boolean({})` → true
+- **`Number()` and `String()` constructors** — type coercion builtins
+
+### Fixed
+- Empty catch body `catch(e) {}` was treated as "no catch" — exception was re-thrown instead of caught
+  Root cause: `parseBlock` returned `nil` for empty blocks; evaluator used `nil` to mean "no catch"
+  Fix: `parseBlock` now always returns a non-nil (but possibly empty) slice
+- **ABAP**: `x'NN'` hex literal syntax in assignment statements is invalid — replaced with integer assignment (`lv_xb = 13. lv_xs = lv_xb.`)
+- **ABAP**: wrong xstring→string conversion API — corrected to `cl_abap_codepage=>convert_from( source = xs codepage = '4110' )`
+
+### Tests
+- Go test262: **PASS=232 FAIL=34** out of 266 tests (was 231 in v0.3.0)
+
 ## [0.3.0] — 2026-04-01
 
 ### Added
