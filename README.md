@@ -312,9 +312,29 @@ Categories covered: numeric literals (hex, scientific, dot-prefix), string escap
 closures, classes, `try/catch/finally`, `throw`, `Boolean()`/`Number()`/`String()`
 constructors, rest/spread, `for...of`, `for...in`, `switch`, `arguments` object, and more.
 
-Remaining ABAP failures (36): `valueOf` coercion on functions/objects, `arguments.callee`,
-named function expression scoping, prototype chain, `do-while`, `delete`, unicode identifiers.
-See [`test262/GAPS.md`](test262/GAPS.md) for details.
+**Note on failure output:** all 36 failures print `: undefined` because `new Test262Error(msg)`
+itself uses plain function construction — the same gap that causes group A to fail. Real error
+messages are masked. Classification is based on test source, not runner output.
+
+ABAP failure breakdown (36 tests, 9 groups):
+
+| Group | Root cause | Tests |
+|-------|-----------|-------|
+| A | `new PlainFunction()` — only class construction handled | 11 |
+| B | `with` statement not implemented | 8 |
+| C | `valueOf`/ToPrimitive coercion on objects | 8 |
+| D | Named function expression name leaks to outer scope | 3 |
+| E | Unicode `\uNNNN` escapes in identifier names | 2 |
+| F | Labeled `break` from nested loop | 1 |
+| G | `delete` operator | 1 |
+| H | `if (cond) IIFE; nextIIFE;` — second statement may attach to if-body | 1 |
+| I | Calling a caught function value as plain `e()` | 1 |
+
+Group A is the only compatibility-critical gap — `new abap.types.Integer({})` and all
+open-abap-core object construction patterns require plain function constructors.
+Groups B–I are spec edge cases with low impact on real-world abaplint/open-abap-core usage.
+
+Full inventory: [`_tmp/codex_report_2026-04-01-test262-conformance-inventory.md`](_tmp/codex_report_2026-04-01-test262-conformance-inventory.md)
 
 ## Installation
 
