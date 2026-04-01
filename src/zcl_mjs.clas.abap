@@ -2,7 +2,8 @@ CLASS zcl_mjs DEFINITION PUBLIC.
   PUBLIC SECTION.
     CLASS-METHODS eval
       IMPORTING iv_source        TYPE string
-      RETURNING VALUE(rv_output) TYPE string.
+      RETURNING VALUE(rv_output) TYPE string
+      RAISING zcx_mjs_runtime.
 
   PRIVATE SECTION.
     CLASS-METHODS tokenize
@@ -1535,10 +1536,10 @@ CLASS zcl_mjs IMPLEMENTATION.
               rs_val = number_val( 0 ).
             ENDIF.
           WHEN OTHERS.
-" todo, throw?
+            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
       WHEN OTHERS.
-" todo, throw?
+        RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
     ENDCASE.
   ENDMETHOD.
 
