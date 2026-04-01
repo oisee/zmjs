@@ -18,6 +18,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_methods FOR TESTING.
     METHODS test_or_chain FOR TESTING.
     METHODS test_space_handling FOR TESTING.
+    METHODS test_string_method_call FOR TESTING.
     METHODS test262 FOR TESTING.
 
     METHODS trim
@@ -187,6 +188,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |true| ).
+  ENDMETHOD.
+
+  METHOD test_string_method_call.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const str = "hello";` && lv_nl &&
+      `str.something();`.
+    TRY.
+        zcl_mjs=>eval( lv_js ).
+        cl_abap_unit_assert=>fail( |Expected error for calling non-existent method| ).
+      CATCH cx_static_check.
+    ENDTRY.
   ENDMETHOD.
 
   METHOD test262.
