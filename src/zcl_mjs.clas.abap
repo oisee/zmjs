@@ -2,7 +2,8 @@ CLASS zcl_mjs DEFINITION PUBLIC.
   PUBLIC SECTION.
     CLASS-METHODS eval
       IMPORTING iv_source        TYPE string
-      RETURNING VALUE(rv_output) TYPE string.
+      RETURNING VALUE(rv_output) TYPE string
+      RAISING zcx_mjs_runtime.
 
   PRIVATE SECTION.
     CLASS-METHODS tokenize
@@ -1433,6 +1434,8 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDIF.
           ENDIF.
+        ELSE.
+          " todo, throw?
         ENDIF.
       WHEN 7.
         CASE iv_method.
@@ -1443,6 +1446,8 @@ CLASS zcl_mjs IMPLEMENTATION.
               is_obj-arr->push( box_value( ls_push_arg ) ).
               rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
             ENDIF.
+          WHEN OTHERS.
+          " todo, throw?
         ENDCASE.
       WHEN 2.
         CASE iv_method.
@@ -1530,7 +1535,11 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = number_val( 0 ).
             ENDIF.
+          WHEN OTHERS.
+            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
+      WHEN OTHERS.
+        RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
     ENDCASE.
   ENDMETHOD.
 
