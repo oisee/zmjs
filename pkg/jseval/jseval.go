@@ -963,8 +963,17 @@ func (p *Parser) parseStatement() *Node {
 		p.next(); return nil
 	}
 
-	// Expression statement
+	// Expression statement (with comma operator support)
 	expr := p.parseExpr()
+	if p.peek().Val == "," {
+		stmts := []*Node{expr}
+		for p.peek().Val == "," {
+			p.next()
+			e := p.parseExpr()
+			if e != nil { stmts = append(stmts, e) }
+		}
+		expr = &Node{Kind: NodeBlock, Body: stmts}
+	}
 	if p.peek().Val == ";" { p.next() }
 	return expr
 }

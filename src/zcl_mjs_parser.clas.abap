@@ -61,6 +61,10 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_object_literal
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_try_catch
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_throw
+      RETURNING VALUE(rr_node) TYPE REF TO data.
   PRIVATE SECTION.
 ENDCLASS.
 
@@ -142,6 +146,12 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       WHEN `switch`.
         rr_node = parse_switch( ).
         RETURN.
+      WHEN `try`.
+        rr_node = parse_try_catch( ).
+        RETURN.
+      WHEN `throw`.
+        rr_node = parse_throw( ).
+        RETURN.
       WHEN `class`.
         rr_node = parse_class( ).
         RETURN.
@@ -160,6 +170,19 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     ENDCASE.
 
     rr_node = parse_expr( ).
+    IF peek( )-val = `,`.
+      DATA lt_seq TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+      APPEND rr_node TO lt_seq.
+      WHILE peek( )-val = `,`.
+        next( ).
+        APPEND parse_expr( ) TO lt_seq.
+      ENDWHILE.
+      DATA lr_seq TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_seq.
+      lr_seq->kind = zif_mjs=>c_node_block.
+      lr_seq->body = lt_seq.
+      rr_node = lr_seq.
+    ENDIF.
     IF peek( )-val = `;`.
       next( ).
     ENDIF.
@@ -351,7 +374,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
   METHOD parse_func.
     next( ).
-    DATA(lv_name) = next( )-val.
+    DATA lv_name TYPE string.
+    IF peek( )-val <> `(`.
+      lv_name = next( )-val.
+    ENDIF.
     expect( `(` ).
     DATA lt_params TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
     WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
@@ -729,6 +755,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    IF ls_t-val = `function`.
+      rr_node = parse_func( ).
+      RETURN.
+    ENDIF.
+
     IF ls_t-kind = 2.
       next( ).
       DATA lv_name TYPE string.
@@ -814,4 +845,45 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     lr_n->args = lt_pairs.
     rr_node = lr_n.
   ENDMETHOD.
+
+  METHOD parse_try_catch.
+    next( ).                          " consume 'try'
+    DATA(lt_try_body) = parse_block( ).
+    DATA lt_catch_body TYPE zif_mjs=>tt_nodes.
+    DATA lv_catch_var TYPE string.
+    IF peek( )-val = `catch`.
+      next( ).                        " consume 'catch'
+      IF peek( )-val = `(`.
+        next( ).                      " consume '('
+        lv_catch_var = next( )-val.   " catch variable name
+        expect( `)` ).
+      ENDIF.
+      lt_catch_body = parse_block( ).
+    ENDIF.
+    IF peek( )-val = `finally`.
+      next( ).                        " consume 'finally'
+      parse_block( ).                 " parse but discard for now
+    ENDIF.
+    DATA lr_n TYPE REF TO zif_mjs=>ty_node.
+    CREATE DATA lr_n.
+    lr_n->kind = zif_mjs=>c_node_try.
+    lr_n->body = lt_try_body.
+    lr_n->els  = lt_catch_body.
+    lr_n->str  = lv_catch_var.
+    rr_node = lr_n.
+  ENDMETHOD.
+
+  METHOD parse_throw.
+    next( ).                          " consume 'throw'
+    DATA(lr_expr) = parse_expr( ).
+    IF peek( )-val = `;`.
+      next( ).
+    ENDIF.
+    DATA lr_n TYPE REF TO zif_mjs=>ty_node.
+    CREATE DATA lr_n.
+    lr_n->kind = zif_mjs=>c_node_throw.
+    lr_n->left = lr_expr.
+    rr_node = lr_n.
+  ENDMETHOD.
+
 ENDCLASS.

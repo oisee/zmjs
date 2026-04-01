@@ -68,7 +68,9 @@ INTERFACE zif_mjs PUBLIC.
     c_node_class         TYPE i VALUE 22,
     c_node_break         TYPE i VALUE 23,
     c_node_continue      TYPE i VALUE 24,
-    c_node_bool          TYPE i VALUE 25.
+    c_node_bool          TYPE i VALUE 25,
+    c_node_try           TYPE i VALUE 26,
+    c_node_throw         TYPE i VALUE 27.
 
   " AST Node
   TYPES:

@@ -649,7 +649,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA ls_fnval TYPE zif_mjs=>ty_value.
         ls_fnval-type = 4.
         ls_fnval-fn   = lr_fn_data.
-        io_env->define( iv_name = <n>-str is_val = ls_fnval ).
+        IF <n>-str IS NOT INITIAL.
+          io_env->define( iv_name = <n>-str is_val = ls_fnval ).
+        ENDIF.
+        rs_val = ls_fnval.
 
       WHEN zif_mjs=>c_node_return.
         DATA(ls_retv) = eval_node( ir_node = <n>-left io_env = io_env ).
@@ -664,6 +667,40 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_continue.
         io_env->continuing = abap_true.
         rs_val = undefined_val( ).
+
+      WHEN zif_mjs=>c_node_throw.
+        DATA(ls_throw_val) = eval_node( ir_node = <n>-left io_env = io_env ).
+        DATA lx_throw TYPE REF TO zcx_mjs_throw.
+        CREATE OBJECT lx_throw EXPORTING is_val = ls_throw_val.
+        RAISE EXCEPTION lx_throw.
+
+      WHEN zif_mjs=>c_node_try.
+        TRY.
+          LOOP AT <n>-body INTO DATA(lr_try_stmt).
+            rs_val = eval_node( ir_node = lr_try_stmt io_env = io_env ).
+            IF io_env->returning = abap_true OR io_env->breaking = abap_true.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        CATCH zcx_mjs_throw INTO DATA(lx_caught).
+          IF lines( <n>-els ) > 0.
+            DATA lo_catch_env TYPE REF TO zcl_mjs_env.
+            CREATE OBJECT lo_catch_env EXPORTING io_parent = io_env.
+            IF <n>-str IS NOT INITIAL.
+              lo_catch_env->define( iv_name = <n>-str is_val = lx_caught->val ).
+            ENDIF.
+            LOOP AT <n>-els INTO DATA(lr_catch_stmt).
+              rs_val = eval_node( ir_node = lr_catch_stmt io_env = lo_catch_env ).
+              IF lo_catch_env->returning = abap_true OR lo_catch_env->breaking = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+            IF lo_catch_env->returning = abap_true.
+              io_env->returning = abap_true.
+              io_env->ret_val   = lo_catch_env->ret_val.
+            ENDIF.
+          ENDIF.
+        ENDTRY.
 
       WHEN zif_mjs=>c_node_object.
         DATA ls_obj TYPE zif_mjs=>ty_value.

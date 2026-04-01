@@ -5,6 +5,7 @@ CLASS lcl_test DEFINITION FOR TESTING
   RISK LEVEL HARMLESS.
   PRIVATE SECTION.
     METHODS test262 FOR TESTING.
+    METHODS test_try_catch FOR TESTING.
     METHODS bench_fib FOR TESTING.
     METHODS bench_loop FOR TESTING.
     METHODS self_contained FOR TESTING.
@@ -96,6 +97,35 @@ CLASS lcl_test IMPLEMENTATION.
       act = lv_r
       exp = `*PASS=45 FAIL=0*`
       msg = |Test262: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_try_catch.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var pass = 0; var fail = 0;` && lv_nl &&
+      `function assert(cond, msg) {` && lv_nl &&
+      `  if (cond) { pass = pass + 1; }` && lv_nl &&
+      `  else { fail = fail + 1; console.log("FAIL: " + msg); }` && lv_nl &&
+      `}` && lv_nl &&
+      `var caught = false;` && lv_nl &&
+      `try { throw "oops"; } catch(e) { caught = (e === "oops"); }` && lv_nl &&
+      `assert(caught, "throw string");` && lv_nl &&
+      `var x = 0;` && lv_nl &&
+      `try { x = 1; } catch(e) { x = 2; }` && lv_nl &&
+      `assert(x === 1, "no throw no catch");` && lv_nl &&
+      `var y = 0;` && lv_nl &&
+      `try { throw 42; } catch(e) { y = e; }` && lv_nl &&
+      `assert(y === 42, "throw number");` && lv_nl &&
+      `function boom() { throw "bang"; }` && lv_nl &&
+      `var msg = "";` && lv_nl &&
+      `try { boom(); } catch(e) { msg = e; }` && lv_nl &&
+      `assert(msg === "bang", "throw from func");` && lv_nl &&
+      `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_char_cp(
+      act = lv_r
+      exp = `*PASS=4 FAIL=0*`
+      msg = |try/catch: { lv_r }| ).
   ENDMETHOD.
 
   METHOD bench_fib.
