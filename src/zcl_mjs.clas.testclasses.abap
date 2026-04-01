@@ -20,6 +20,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_space_handling FOR TESTING.
     METHODS test_string_method_call FOR TESTING.
     METHODS test_anonymous_class FOR TESTING.
+    METHODS test_obj_shorthand FOR TESTING.
     METHODS test262 FOR TESTING.
 
     METHODS trim
@@ -222,6 +223,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |Done| ).
+  ENDMETHOD.
+
+  METHOD test_obj_shorthand.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function foo() {` && lv_nl &&
+      `    let bar = 2` && lv_nl &&
+      `    return {bar};` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(foo().bar);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2| ).
   ENDMETHOD.
 
   METHOD test262.
