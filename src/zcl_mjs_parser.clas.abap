@@ -852,8 +852,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   METHOD parse_try_catch.
     next( ).                          " consume 'try'
     DATA(lt_try_body) = parse_block( ).
-    DATA lt_catch_body TYPE zif_mjs=>tt_nodes.
-    DATA lv_catch_var TYPE string.
+    DATA lt_catch_body  TYPE zif_mjs=>tt_nodes.
+    DATA lt_finally_body TYPE zif_mjs=>tt_nodes.
+    DATA lv_catch_var   TYPE string.
+    DATA lv_op          TYPE string.
     IF peek( )-val = `catch`.
       next( ).                        " consume 'catch'
       IF peek( )-val = `(`.
@@ -862,10 +864,12 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         expect( `)` ).
       ENDIF.
       lt_catch_body = parse_block( ).
+      lv_op = `C`.                    " mark: has catch
     ENDIF.
     IF peek( )-val = `finally`.
       next( ).                        " consume 'finally'
-      parse_block( ).                 " parse but discard for now
+      lt_finally_body = parse_block( ).
+      lv_op = lv_op && `F`.          " mark: has finally
     ENDIF.
     DATA lr_n TYPE REF TO zif_mjs=>ty_node.
     CREATE DATA lr_n.
@@ -873,6 +877,8 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     lr_n->body = lt_try_body.
     lr_n->els  = lt_catch_body.
     lr_n->str  = lv_catch_var.
+    lr_n->op   = lv_op.
+    lr_n->args = lt_finally_body.    " repurpose args for finally body
     rr_node = lr_n.
   ENDMETHOD.
 

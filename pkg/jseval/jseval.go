@@ -133,6 +133,7 @@ type Node struct {
 	// Try/catch
 	Catch    []*Node  // catch body
 	CatchVar string   // catch variable name
+	Finally  []*Node  // finally body
 }
 
 type SwitchCase struct {
@@ -298,6 +299,7 @@ func evalNode(n *Node, env *Env) Value {
 		panic(val)
 
 	case NodeTryCatch:
+		var rethrow interface{}
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -318,6 +320,14 @@ func evalNode(n *Node, env *Env) Value {
 							env.returning = true
 							env.retVal = catchEnv.retVal
 						}
+						// propagate var-declared names back to outer scope
+						for k, v := range catchEnv.vars {
+							if k != n.CatchVar {
+								env.vars[k] = v
+							}
+						}
+					} else {
+						rethrow = r
 					}
 				}
 			}()
@@ -326,6 +336,12 @@ func evalNode(n *Node, env *Env) Value {
 				if env.returning || env.breaking { break }
 			}
 		}()
+		// execute finally (always)
+		for _, s := range n.Finally {
+			evalNode(s, env)
+			if env.returning || env.breaking { break }
+		}
+		if rethrow != nil { panic(rethrow) }
 
 	case NodeUnaryOp:
 		val := evalNode(n.Left, env)
@@ -444,6 +460,18 @@ func evalNode(n *Node, env *Env) Value {
 		return last
 
 	case NodeCall:
+		// Global constructor functions
+		switch n.Str {
+		case "Boolean":
+			if len(n.Args) == 0 { return BoolVal(false) }
+			return BoolVal(evalNode(n.Args[0], env).IsTrue())
+		case "Number":
+			if len(n.Args) == 0 { return NumberVal(0) }
+			return NumberVal(evalNode(n.Args[0], env).ToNumber())
+		case "String":
+			if len(n.Args) == 0 { return StringVal("") }
+			return StringVal(evalNode(n.Args[0], env).ToString())
+		}
 		// console.log special case
 		if n.Str == "console.log" {
 			var parts []string
@@ -810,9 +838,26 @@ func tokenize(src string) []Token {
 					switch src[j] {
 					case 'n': sb.WriteByte('\n')
 					case 't': sb.WriteByte('\t')
+					case 'r': sb.WriteByte('\r')
+					case 'b': sb.WriteByte('\b')
+					case 'f': sb.WriteByte('\f')
+					case 'v': sb.WriteByte('\v')
+					case '0': sb.WriteByte(0)
 					case '\\': sb.WriteByte('\\')
 					case '\'': sb.WriteByte('\'')
 					case '"': sb.WriteByte('"')
+					case 'x':
+						if j+2 < len(src) {
+							val, _ := strconv.ParseInt(src[j+1:j+3], 16, 64)
+							sb.WriteRune(rune(val))
+							j += 2
+						}
+					case 'u':
+						if j+4 < len(src) {
+							val, _ := strconv.ParseInt(src[j+1:j+5], 16, 64)
+							sb.WriteRune(rune(val))
+							j += 4
+						}
 					default: sb.WriteByte(src[j])
 					}
 				} else {
@@ -1096,12 +1141,12 @@ func (p *Parser) parseTryCatch() *Node {
 		}
 		catchBody = p.parseBlock()
 	}
-	// skip optional "finally" block
+	var finallyBody []*Node
 	if p.peek().Val == "finally" {
 		p.next()
-		p.parseBlock() // parse but ignore for now
+		finallyBody = p.parseBlock()
 	}
-	return &Node{Kind: NodeTryCatch, Body: body, Catch: catchBody, CatchVar: catchVar}
+	return &Node{Kind: NodeTryCatch, Body: body, Catch: catchBody, CatchVar: catchVar, Finally: finallyBody}
 }
 
 func (p *Parser) parseSwitch() *Node {
@@ -1204,7 +1249,7 @@ func (p *Parser) parseReturn() *Node {
 
 func (p *Parser) parseBlock() []*Node {
 	p.expect("{")
-	var stmts []*Node
+	stmts := make([]*Node, 0) // non-nil so empty catch/finally blocks are distinguishable from absent ones
 	for p.peek().Val != "}" && p.peek().Kind != 5 {
 		s := p.parseStatement()
 		if s != nil { stmts = append(stmts, s) }

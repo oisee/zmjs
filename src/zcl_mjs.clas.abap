@@ -230,11 +230,56 @@ CLASS zcl_mjs IMPLEMENTATION.
             lv_j = lv_j + 1.
             DATA lv_esc TYPE c LENGTH 1.
             lv_esc = iv_src+lv_j(1).
+            DATA lv_esc_cp   TYPE i.
+            DATA lv_esc_xb   TYPE x LENGTH 1.
+            DATA lv_esc_xs   TYPE xstring.
+            DATA lv_xh       TYPE i.
             CASE lv_esc.
               WHEN `n`.
                 lv_sbuf = lv_sbuf && cl_abap_char_utilities=>newline.
               WHEN `t`.
                 lv_sbuf = lv_sbuf && cl_abap_char_utilities=>horizontal_tab.
+              WHEN `r`.  " CR = 0x0D
+                lv_esc_xb = 13. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `b`.  " backspace = 0x08
+                lv_esc_xb = 8. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `f`.  " form feed = 0x0C
+                lv_esc_xb = 12. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `v`.  " vertical tab = 0x0B
+                lv_esc_xb = 11. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `0`.  " null = 0x00
+                lv_esc_xb = 0. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `x`.  " \xNN — 2 hex digits
+                lv_esc_cp = 0.
+                lv_xh = lv_j + 1.
+                DO 2 TIMES.
+                  lv_hc = iv_src+lv_xh(1).
+                  TRANSLATE lv_hc TO LOWER CASE.
+                  FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                  lv_esc_cp = lv_esc_cp * 16 + lv_hpos.
+                  lv_xh = lv_xh + 1.
+                ENDDO.
+                lv_j = lv_j + 2.
+                lv_esc_xb = lv_esc_cp. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
+              WHEN `u`.  " \uNNNN — 4 hex digits (BMP, single byte for 0x00-0x7F)
+                lv_esc_cp = 0.
+                lv_xh = lv_j + 1.
+                DO 4 TIMES.
+                  lv_hc = iv_src+lv_xh(1).
+                  TRANSLATE lv_hc TO LOWER CASE.
+                  FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                  lv_esc_cp = lv_esc_cp * 16 + lv_hpos.
+                  lv_xh = lv_xh + 1.
+                ENDDO.
+                lv_j = lv_j + 4.
+                lv_esc_xb = lv_esc_cp. lv_esc_xs = lv_esc_xb.
+                lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
               WHEN `\`.
                 lv_sbuf = lv_sbuf && `\`.
               WHEN `'`.
@@ -701,6 +746,23 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDLOOP.
 
       WHEN zif_mjs=>c_node_call.
+        IF <n>-str = `Boolean`.
+          DATA ls_bool_in TYPE zif_mjs=>ty_value.
+          IF lines( <n>-args ) > 0.
+            ls_bool_in = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+          ELSE.
+            ls_bool_in = undefined_val( ).
+          ENDIF.
+          DATA lv_is_true TYPE abap_bool.
+          CASE ls_bool_in-type.
+            WHEN 0 OR 5. lv_is_true = abap_false.
+            WHEN 1 OR 3. lv_is_true = COND #( WHEN ls_bool_in-num <> 0 THEN abap_true ELSE abap_false ).
+            WHEN 2.      lv_is_true = COND #( WHEN ls_bool_in-str IS NOT INITIAL THEN abap_true ELSE abap_false ).
+            WHEN OTHERS. lv_is_true = abap_true.
+          ENDCASE.
+          rs_val = bool_val( lv_is_true ).
+          RETURN.
+        ENDIF.
         IF <n>-str = `console.log`.
           DATA lv_parts TYPE string.
           CLEAR lv_parts.
@@ -783,6 +845,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         RAISE EXCEPTION lx_throw.
 
       WHEN zif_mjs=>c_node_try.
+        DATA lx_rethrow TYPE REF TO zcx_mjs_throw.
         TRY.
           LOOP AT <n>-body INTO DATA(lr_try_stmt).
             rs_val = eval_node( ir_node = lr_try_stmt io_env = io_env ).
@@ -791,7 +854,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
           ENDLOOP.
         CATCH zcx_mjs_throw INTO DATA(lx_caught).
-          IF lines( <n>-els ) > 0.
+          IF <n>-op CS `C`.
             DATA lo_catch_env TYPE REF TO zcl_mjs_env.
             CREATE OBJECT lo_catch_env EXPORTING io_parent = io_env.
             IF <n>-str IS NOT INITIAL.
@@ -807,8 +870,29 @@ CLASS zcl_mjs IMPLEMENTATION.
               io_env->returning = abap_true.
               io_env->ret_val   = lo_catch_env->ret_val.
             ENDIF.
+            " propagate var-declared names from catch scope to outer scope
+            LOOP AT lo_catch_env->vars ASSIGNING FIELD-SYMBOL(<cv>).
+              IF <cv>-name <> <n>-str.
+                io_env->define( iv_name = <cv>-name is_val = <cv>-val ).
+              ENDIF.
+            ENDLOOP.
+          ELSE.
+            lx_rethrow = lx_caught.
           ENDIF.
         ENDTRY.
+        " execute finally block (always)
+        IF <n>-op CS `F`.
+          LOOP AT <n>-args INTO DATA(lr_fin_stmt).
+            rs_val = eval_node( ir_node = lr_fin_stmt io_env = io_env ).
+            IF io_env->returning = abap_true OR io_env->breaking = abap_true.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+        " rethrow if try-finally without catch
+        IF lx_rethrow IS BOUND.
+          RAISE EXCEPTION lx_rethrow.
+        ENDIF.
 
       WHEN zif_mjs=>c_node_object.
         DATA ls_obj TYPE zif_mjs=>ty_value.
