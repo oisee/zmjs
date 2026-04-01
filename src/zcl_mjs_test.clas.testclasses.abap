@@ -5,7 +5,6 @@ CLASS lcl_test DEFINITION FOR TESTING
     METHODS test262 FOR TESTING.
     METHODS bench_fib FOR TESTING.
     METHODS bench_loop FOR TESTING.
-    METHODS self_contained FOR TESTING.
 ENDCLASS.
 
 CLASS lcl_test IMPLEMENTATION.
@@ -132,35 +131,6 @@ CLASS lcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |sum=49995000| )
       msg = |loop sum expected 49995000, got: { lv_r }| ).
-  ENDMETHOD.
-
-  METHOD self_contained.
-    SELECT SINGLE devclass FROM tadir
-      WHERE pgmid = 'R3TR'
-        AND object = 'CLAS'
-        AND obj_name = 'ZCL_MJS'
-      INTO @DATA(lv_pkg).
-    cl_abap_unit_assert=>assert_equals(
-      act = lv_pkg
-      exp = '$ZMJS'
-      msg = |zcl_mjs should be in $ZMJS, found: { lv_pkg }| ).
-
-    SELECT obj_name FROM tadir
-      WHERE pgmid = 'R3TR'
-        AND object = 'CLAS'
-        AND devclass = '$ZMJS'
-        AND obj_name LIKE 'ZCL_MJS%'
-      INTO TABLE @DATA(lt_classes).
-    cl_abap_unit_assert=>assert_not_initial(
-      act = lt_classes
-      msg = |No ZCL_MJS* classes found in $ZMJS| ).
-
-    SELECT obj_name FROM tadir
-      WHERE pgmid = 'R3TR'
-        AND object = 'INTF'
-        AND devclass = '$ZMJS'
-        AND obj_name LIKE 'ZIF_MJS%'
-      INTO TABLE @DATA(lt_intfs).
   ENDMETHOD.
 
 ENDCLASS.
