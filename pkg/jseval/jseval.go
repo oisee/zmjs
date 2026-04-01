@@ -117,6 +117,9 @@ type Node struct {
 	Args     []*Node
 	Body     []*Node
 	Params   []string
+	// Variable slot optimization (set by compileFunction, -1 = not compiled)
+	Slot     int
+	SlotOK   bool
 	Cond     *Node
 	Else     []*Node
 	// For loop
@@ -151,15 +154,19 @@ type ClassMethod struct {
 
 // Function represents a JS function.
 type Function struct {
-	Name    string
-	Params  []string
-	Body    []*Node
-	Closure *Env // captured environment for closures
+	Name     string
+	Params   []string
+	Body     []*Node
+	Closure  *Env           // captured environment for closures
+	Slots    map[string]int // variable slot map (nil until lazy-compiled)
+	MaxSlots int            // number of slots needed
 }
 
 // Env is a variable environment (scope).
 type Env struct {
-	vars      map[string]Value
+	slots     []Value          // fast slot-indexed local vars (function envs only)
+	slotMap   map[string]int   // shared with Function; nil for non-function envs
+	vars      map[string]Value // name→value for global/closure vars
 	parent    *Env
 	output    *strings.Builder // for console.log
 	returning  bool
@@ -178,24 +185,42 @@ func NewEnv(parent *Env) *Env {
 	return e
 }
 
+// newFuncEnv creates a slot-based env for a function call — no map allocation.
+func newFuncEnv(fn *Function, parent *Env, output *strings.Builder) *Env {
+	slots := make([]Value, fn.MaxSlots)
+	for i := range slots { slots[i] = Undefined }
+	return &Env{slots: slots, slotMap: fn.Slots, parent: parent, output: output}
+}
+
 func (e *Env) Get(name string) Value {
+	if e.slotMap != nil {
+		if slot, ok := e.slotMap[name]; ok { return e.slots[slot] }
+	}
 	if v, ok := e.vars[name]; ok { return v }
 	if e.parent != nil { return e.parent.Get(name) }
 	return Undefined
 }
 
 func (e *Env) Set(name string, v Value) {
-	// Walk up to find existing var
 	for env := e; env != nil; env = env.parent {
-		if _, ok := env.vars[name]; ok {
-			env.vars[name] = v
-			return
+		if env.slotMap != nil {
+			if slot, ok := env.slotMap[name]; ok { env.slots[slot] = v; return }
+		}
+		if env.vars != nil {
+			if _, ok := env.vars[name]; ok { env.vars[name] = v; return }
 		}
 	}
-	e.vars[name] = v
+	e.Define(name, v)
 }
 
 func (e *Env) Define(name string, v Value) {
+	if e.slotMap != nil {
+		if slot, ok := e.slotMap[name]; ok {
+			e.slots[slot] = v
+			return
+		}
+	}
+	if e.vars == nil { e.vars = make(map[string]Value) }
 	e.vars[name] = v
 }
 
@@ -220,18 +245,83 @@ func Eval(source string) (string, error) {
 	return env.output.String(), nil
 }
 
+// compileFunction performs a lazy slot-assignment pass over a function body.
+// Called once per unique function definition on first invocation.
+func compileFunction(fn *Function) {
+	slotMap := make(map[string]int)
+	next := 0
+	for _, p := range fn.Params {
+		name := p
+		if strings.HasPrefix(p, "...") { name = p[3:] }
+		slotMap[name] = next; next++
+	}
+	for _, s := range fn.Body { collectSlots(s, slotMap, &next) }
+	fn.Slots = slotMap
+	fn.MaxSlots = next
+	for _, s := range fn.Body { annotateSlots(s, slotMap) }
+}
+
+// collectSlots discovers all var/let/const/function declarations in a function body.
+// Does NOT descend into nested function bodies (they have their own scope).
+func collectSlots(n *Node, sm map[string]int, next *int) {
+	if n == nil { return }
+	switch n.Kind {
+	case NodeVar:
+		if _, ok := sm[n.Str]; !ok { sm[n.Str] = *next; *next++ }
+		collectSlots(n.Right, sm, next)
+	case NodeFuncDecl:
+		if n.Str != "" { if _, ok := sm[n.Str]; !ok { sm[n.Str] = *next; *next++ } }
+		return // don't descend into nested body
+	default:
+		collectSlots(n.Left, sm, next); collectSlots(n.Right, sm, next)
+		collectSlots(n.Cond, sm, next); collectSlots(n.Init, sm, next)
+		collectSlots(n.Update, sm, next)
+		for _, c := range n.Body   { collectSlots(c, sm, next) }
+		for _, c := range n.Else   { collectSlots(c, sm, next) }
+		for _, c := range n.Args   { collectSlots(c, sm, next) }
+		for _, c := range n.Catch  { collectSlots(c, sm, next) }
+		for _, c := range n.Finally { collectSlots(c, sm, next) }
+		for _, sc := range n.Cases { for _, s := range sc.Body { collectSlots(s, sm, next) } }
+	}
+}
+
+// annotateSlots sets Slot/SlotOK on identifier/var/assign nodes for local variables.
+// Does NOT descend into nested function bodies.
+func annotateSlots(n *Node, sm map[string]int) {
+	if n == nil { return }
+	switch n.Kind {
+	case NodeIdent, NodeVar, NodeAssign:
+		if slot, ok := sm[n.Str]; ok { n.Slot = slot; n.SlotOK = true }
+		annotateSlots(n.Left, sm); annotateSlots(n.Right, sm)
+	case NodeFuncDecl:
+		if n.Str != "" { if slot, ok := sm[n.Str]; ok { n.Slot = slot; n.SlotOK = true } }
+		return // don't descend into nested body
+	default:
+		annotateSlots(n.Left, sm); annotateSlots(n.Right, sm)
+		annotateSlots(n.Cond, sm); annotateSlots(n.Init, sm)
+		annotateSlots(n.Update, sm); annotateSlots(n.Object, sm)
+		if n.PropExpr != nil { annotateSlots(n.PropExpr, sm) }
+		for _, c := range n.Body    { annotateSlots(c, sm) }
+		for _, c := range n.Else    { annotateSlots(c, sm) }
+		for _, c := range n.Args    { annotateSlots(c, sm) }
+		for _, c := range n.Catch   { annotateSlots(c, sm) }
+		for _, c := range n.Finally { annotateSlots(c, sm) }
+		for _, sc := range n.Cases  { for _, s := range sc.Body { annotateSlots(s, sm) } }
+	}
+}
+
 func callFunction(fn *Function, args []Value, env *Env, thisVal *Value) Value {
+	// Lazy compile: assign variable slots on first call
+	if fn.Slots == nil { compileFunction(fn) }
+
 	// Use closure environment if available, otherwise caller env
 	parentEnv := env
-	if fn.Closure != nil {
-		parentEnv = fn.Closure
-	}
-	callEnv := NewEnv(parentEnv)
-	// Propagate output from caller
-	callEnv.output = env.output
-	if thisVal != nil {
-		callEnv.Define("this", *thisVal)
-	}
+	if fn.Closure != nil { parentEnv = fn.Closure }
+
+	// Create slot-based env — no map allocation for local vars
+	callEnv := newFuncEnv(fn, parentEnv, env.output)
+
+	if thisVal != nil { callEnv.Define("this", *thisVal) }
 	for i, param := range fn.Params {
 		if strings.HasPrefix(param, "...") {
 			// Rest parameter: collect remaining args into array
@@ -278,6 +368,10 @@ func evalNode(n *Node, env *Env) Value {
 	case NodeString:
 		return StringVal(n.Str)
 	case NodeIdent:
+		// Fast path: direct slot access (no hash lookup, no scope chain walk)
+		if n.SlotOK && env.slots != nil && n.Slot < len(env.slots) {
+			return env.slots[n.Slot]
+		}
 		return env.Get(n.Str)
 
 	case NodeBinOp:
@@ -323,7 +417,7 @@ func evalNode(n *Node, env *Env) Value {
 						// propagate var-declared names back to outer scope
 						for k, v := range catchEnv.vars {
 							if k != n.CatchVar {
-								env.vars[k] = v
+								env.Define(k, v)
 							}
 						}
 					} else {
@@ -352,6 +446,11 @@ func evalNode(n *Node, env *Env) Value {
 
 	case NodeAssign:
 		val := evalNode(n.Right, env)
+		// Fast path: direct slot write
+		if n.SlotOK && env.slots != nil && n.Slot < len(env.slots) {
+			env.slots[n.Slot] = val
+			return val
+		}
 		env.Set(n.Str, val)
 		return val
 
@@ -370,6 +469,11 @@ func evalNode(n *Node, env *Env) Value {
 	case NodeVar:
 		val := Undefined
 		if n.Right != nil { val = evalNode(n.Right, env) }
+		// Fast path: direct slot write
+		if n.SlotOK && env.slots != nil && n.Slot < len(env.slots) {
+			env.slots[n.Slot] = val
+			return val
+		}
 		env.Define(n.Str, val)
 		return val
 
