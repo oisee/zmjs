@@ -1,0 +1,22 @@
+{
+  "name": "zmjs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "abaplint && abap_transpile && node output/index.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/larshp/zmjs.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/larshp/zmjs/issues"
+  },
+  "homepage": "https://github.com/larshp/zmjs#readme",
+  "dependencies": {
+    "@abaplint/cli": "^2.118.7",
+    "@abaplint/transpiler-cli": "^2.13.3"
+  }
+}
