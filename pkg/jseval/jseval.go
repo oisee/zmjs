@@ -59,6 +59,9 @@ func (v Value) ToString() string {
 	switch v.Type {
 	case 0: return "undefined"
 	case 1:
+		if math.IsNaN(v.Num) { return "NaN" }
+		if math.IsInf(v.Num, 1) { return "Infinity" }
+		if math.IsInf(v.Num, -1) { return "-Infinity" }
 		if v.Num == float64(int64(v.Num)) { return fmt.Sprintf("%d", int64(v.Num)) }
 		return fmt.Sprintf("%g", v.Num)
 	case 2: return v.Str
@@ -104,6 +107,7 @@ const (
 	NodeForOf        // for (let x of arr) { ... }
 	NodeTemplateLit  // `text ${expr} text`
 	NodeSpread       // ...expr
+	NodeFuncExpr     // function expression (name not visible in outer scope)
 )
 
 // Node is an AST node.
@@ -272,6 +276,8 @@ func collectSlots(n *Node, sm map[string]int, next *int) {
 	case NodeFuncDecl:
 		if n.Str != "" { if _, ok := sm[n.Str]; !ok { sm[n.Str] = *next; *next++ } }
 		return // don't descend into nested body
+	case NodeFuncExpr:
+		return // name is not visible in outer scope; don't descend
 	default:
 		collectSlots(n.Left, sm, next); collectSlots(n.Right, sm, next)
 		collectSlots(n.Cond, sm, next); collectSlots(n.Init, sm, next)
@@ -296,6 +302,8 @@ func annotateSlots(n *Node, sm map[string]int) {
 	case NodeFuncDecl:
 		if n.Str != "" { if slot, ok := sm[n.Str]; ok { n.Slot = slot; n.SlotOK = true } }
 		return // don't descend into nested body
+	case NodeFuncExpr:
+		return // name not in outer scope; don't annotate or descend
 	default:
 		annotateSlots(n.Left, sm); annotateSlots(n.Right, sm)
 		annotateSlots(n.Cond, sm); annotateSlots(n.Init, sm)
@@ -322,6 +330,10 @@ func callFunction(fn *Function, args []Value, env *Env, thisVal *Value) Value {
 	callEnv := newFuncEnv(fn, parentEnv, env.output)
 
 	if thisVal != nil { callEnv.Define("this", *thisVal) }
+	hasArgumentsParam := false
+	for _, param := range fn.Params {
+		if param == "arguments" { hasArgumentsParam = true; break }
+	}
 	for i, param := range fn.Params {
 		if strings.HasPrefix(param, "...") {
 			// Rest parameter: collect remaining args into array
@@ -335,7 +347,15 @@ func callFunction(fn *Function, args []Value, env *Env, thisVal *Value) Value {
 		}
 		if i < len(args) {
 			callEnv.Define(param, args[i])
+		} else {
+			callEnv.Define(param, Undefined)
 		}
+	}
+	// Bind `arguments` pseudo-array (unless a formal param shadows it)
+	if !hasArgumentsParam {
+		argsCopy := make([]Value, len(args))
+		copy(argsCopy, args)
+		callEnv.Define("arguments", ArrayVal(argsCopy))
 	}
 	var result Value
 	for _, s := range fn.Body {
@@ -375,6 +395,21 @@ func evalNode(n *Node, env *Env) Value {
 		return env.Get(n.Str)
 
 	case NodeBinOp:
+		// Short-circuit operators: evaluate right only if needed
+		switch n.Op {
+		case "&&":
+			left := evalNode(n.Left, env)
+			if !left.IsTrue() { return left }
+			return evalNode(n.Right, env)
+		case "||":
+			left := evalNode(n.Left, env)
+			if left.IsTrue() { return left }
+			return evalNode(n.Right, env)
+		case "??":
+			left := evalNode(n.Left, env)
+			if left.Type != 0 && left.Type != 5 { return left }
+			return evalNode(n.Right, env)
+		}
 		left := evalNode(n.Left, env)
 		right := evalNode(n.Right, env)
 		return evalBinOp(n.Op, left, right)
@@ -438,10 +473,34 @@ func evalNode(n *Node, env *Env) Value {
 		if rethrow != nil { panic(rethrow) }
 
 	case NodeUnaryOp:
+		if n.Op == "delete" {
+			// delete obj.prop or delete obj[key] → remove and return true
+			// delete identifier → false (vars are non-configurable)
+			if n.Left.Kind == NodeMemberAccess {
+				obj := evalNode(n.Left.Object, env)
+				var key string
+				if n.Left.PropExpr != nil {
+					key = evalNode(n.Left.PropExpr, env).ToString()
+				} else {
+					key = n.Left.Property
+				}
+				if obj.Type == 6 && obj.Obj != nil {
+					delete(obj.Obj, key)
+					return BoolVal(true)
+				}
+				return BoolVal(true)
+			}
+			return BoolVal(false) // delete variable → false
+		}
+		if n.Op == "void" {
+			evalNode(n.Left, env)
+			return Undefined
+		}
 		val := evalNode(n.Left, env)
 		switch n.Op {
 		case "-": return NumberVal(-val.ToNumber())
 		case "!": return BoolVal(!val.IsTrue())
+		case "+": return NumberVal(val.ToNumber())
 		}
 
 	case NodeAssign:
@@ -613,6 +672,19 @@ func evalNode(n *Node, env *Env) Value {
 		fnVal := Value{Type: 4, Fn: fn}
 		if n.Str != "" {
 			env.Define(n.Str, fnVal)
+		}
+		return fnVal
+
+	case NodeFuncExpr:
+		// Function expression: name (if any) is only visible inside the function body
+		fn := &Function{Name: n.Str, Params: n.Params, Body: n.Body, Closure: env}
+		fnVal := Value{Type: 4, Fn: fn}
+		if n.Str != "" {
+			// Bind the name inside the function's own closure env so it can self-recurse,
+			// but do NOT define it in the enclosing scope.
+			inner := NewEnv(env)
+			inner.Define(n.Str, fnVal)
+			fn.Closure = inner
 		}
 		return fnVal
 
@@ -852,31 +924,45 @@ func evalBinOp(op string, l, r Value) Value {
 	if op == "+" && (l.Type == 2 || r.Type == 2) {
 		return StringVal(l.ToString() + r.ToString())
 	}
-	// Equality — compare by type+value, not just numeric
+	// Strict equality
 	switch op {
-	case "==", "===":
+	case "===":
 		if l.Type != r.Type { return BoolVal(false) }
 		if l.Type == 2 { return BoolVal(l.Str == r.Str) }
 		return BoolVal(l.ToNumber() == r.ToNumber())
-	case "!=", "!==":
+	case "!==":
 		if l.Type != r.Type { return BoolVal(true) }
 		if l.Type == 2 { return BoolVal(l.Str != r.Str) }
 		return BoolVal(l.ToNumber() != r.ToNumber())
+	// Abstract equality: null==undefined, number/string coercion
+	case "==":
+		if l.Type == r.Type {
+			if l.Type == 2 { return BoolVal(l.Str == r.Str) }
+			return BoolVal(l.ToNumber() == r.ToNumber())
+		}
+		// null == undefined
+		if (l.Type == 0 || l.Type == 5) && (r.Type == 0 || r.Type == 5) { return BoolVal(true) }
+		// number/string coercion
+		if l.Type == 1 && r.Type == 2 { return BoolVal(l.Num == r.ToNumber()) }
+		if l.Type == 2 && r.Type == 1 { return BoolVal(l.ToNumber() == r.Num) }
+		// bool coercion
+		if l.Type == 3 { return evalBinOp("==", NumberVal(l.ToNumber()), r) }
+		if r.Type == 3 { return evalBinOp("==", l, NumberVal(r.ToNumber())) }
+		return BoolVal(false)
+	case "!=":
+		return BoolVal(!evalBinOp("==", l, r).IsTrue())
 	}
 	a, b := l.ToNumber(), r.ToNumber()
 	switch op {
 	case "+": return NumberVal(a + b)
 	case "-": return NumberVal(a - b)
 	case "*": return NumberVal(a * b)
-	case "/": if b != 0 { return NumberVal(a / b) }; return NumberVal(0)
-	case "%": if b != 0 { return NumberVal(float64(int64(a) % int64(b))) }; return NumberVal(0)
+	case "/": return NumberVal(a / b) // Go float64: 1/0=+Inf, -1/0=-Inf, 0/0=NaN
+	case "%": return NumberVal(math.Mod(a, b))
 	case "<": return BoolVal(a < b)
 	case ">": return BoolVal(a > b)
 	case "<=": return BoolVal(a <= b)
 	case ">=": return BoolVal(a >= b)
-	case "&&": return BoolVal(l.IsTrue() && r.IsTrue())
-	case "||": if l.IsTrue() { return l }; return r
-	case "??": if l.Type != 0 && l.Type != 5 { return l }; return r
 	}
 	return Undefined
 }
@@ -1473,7 +1559,12 @@ func (p *Parser) parseMulDiv() *Node {
 }
 
 func (p *Parser) parseUnary() *Node {
-	if p.peek().Kind == 3 && (p.peek().Val == "-" || p.peek().Val == "!") {
+	if p.peek().Kind == 3 && (p.peek().Val == "-" || p.peek().Val == "!" || p.peek().Val == "+") {
+		op := p.next().Val
+		operand := p.parseUnary()
+		return &Node{Kind: NodeUnaryOp, Op: op, Left: operand}
+	}
+	if p.peek().Val == "delete" || p.peek().Val == "void" {
 		op := p.next().Val
 		operand := p.parseUnary()
 		return &Node{Kind: NodeUnaryOp, Op: op, Left: operand}
@@ -1589,7 +1680,7 @@ func (p *Parser) parsePrimary() *Node {
 		}
 		p.expect(")")
 		body := p.parseBlock()
-		return &Node{Kind: NodeFuncDecl, Str: name, Params: params, Body: body}
+		return &Node{Kind: NodeFuncExpr, Str: name, Params: params, Body: body}
 
 	case t.Val == "(":
 		// Try arrow function: (params) => ...

@@ -57,11 +57,20 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 ir_obj_node   TYPE REF TO data
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
     CLASS-METHODS call_function
-      IMPORTING is_fn         TYPE zif_mjs=>ty_function
+      IMPORTING ir_fn         TYPE REF TO data
                 it_args       TYPE zif_mjs=>tt_nodes
                 io_env        TYPE REF TO zcl_mjs_env
                 ir_this       TYPE REF TO data OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+    CLASS-METHODS compile_function
+      IMPORTING ir_fn         TYPE REF TO data.
+    CLASS-METHODS collect_slots
+      IMPORTING ir_node       TYPE REF TO data
+      CHANGING  ct_map        TYPE zif_mjs=>tt_slot_map
+                cv_next       TYPE i.
+    CLASS-METHODS annotate_slots
+      IMPORTING ir_node       TYPE REF TO data
+                ir_map        TYPE REF TO zif_mjs=>tt_slot_map.
     CLASS-METHODS box_value
       IMPORTING is_val        TYPE zif_mjs=>ty_value
       RETURNING VALUE(rr_ref) TYPE REF TO data.
@@ -254,7 +263,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               WHEN `0`.  " null = 0x00
                 lv_esc_xb = 0. lv_esc_xs = lv_esc_xb.
                 lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
-              WHEN `x`.  " \xNN — 2 hex digits
+              WHEN `x`.  " \xNN - 2 hex digits
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 2 TIMES.
@@ -267,7 +276,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_j = lv_j + 2.
                 lv_esc_xb = lv_esc_cp. lv_esc_xs = lv_esc_xb.
                 lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs codepage = '4110' ).
-              WHEN `u`.  " \uNNNN — 4 hex digits (BMP, single byte for 0x00-0x7F)
+              WHEN `u`.  " \uNNNN - 4 hex digits (BMP, single byte for 0x00-0x7F)
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 4 TIMES.
@@ -544,37 +553,90 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD call_function.
+    " ir_fn is REF TO zif_mjs=>ty_function - modifiable for lazy compile
+    FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    ASSIGN ir_fn->* TO <fn>.
+
+    " Lazy compile: assign variable slots on first call
+    IF <fn>-compiled = abap_false.
+      compile_function( ir_fn ).
+    ENDIF.
+
     DATA lo_parent TYPE REF TO zcl_mjs_env.
-    IF is_fn-closure IS BOUND.
-      lo_parent ?= is_fn-closure.
+    IF <fn>-closure IS BOUND.
+      lo_parent ?= <fn>-closure.
     ELSE.
       lo_parent = io_env.
     ENDIF.
+
     DATA lo_call_env TYPE REF TO zcl_mjs_env.
-    CREATE OBJECT lo_call_env
-      EXPORTING io_parent = lo_parent.
+    CREATE OBJECT lo_call_env EXPORTING io_parent = lo_parent.
     lo_call_env->output = io_env->output.
+
+    " Share slot_map reference (no copy - all calls use the same hash table)
+    lo_call_env->slot_map = <fn>-slot_map.
+
+    " Pre-populate slots table with 'undefined' entries (index-based, O(1) access)
+    DATA ls_undef TYPE zif_mjs=>ty_value.  " type=0 = undefined
+    DO <fn>-max_slots TIMES.
+      APPEND ls_undef TO lo_call_env->slots.
+    ENDDO.
+
+    " Bind 'this' in vars (not slots - special name, always slow-path)
     IF ir_this IS BOUND.
       FIELD-SYMBOLS <this> TYPE zif_mjs=>ty_value.
       ASSIGN ir_this->* TO <this>.
       lo_call_env->define( iv_name = `this` is_val = <this> ).
     ENDIF.
-    DATA lv_idx TYPE i VALUE 0.
-    LOOP AT is_fn-params INTO DATA(lv_param).
-      DATA lr_arg TYPE REF TO data.
-      READ TABLE it_args INDEX lv_idx + 1 INTO lr_arg.
-      IF sy-subrc = 0.
-        lo_call_env->define( iv_name = lv_param is_val = unbox_value( lr_arg ) ).
+
+    " Bind params to slots (fast path: direct index write)
+    DATA lv_idx TYPE i VALUE 1.
+    DATA lv_nargs TYPE i.
+    lv_nargs = lines( it_args ).
+    LOOP AT <fn>-params INTO DATA(lv_param).
+      DATA lv_pname TYPE string.
+      IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
+        " Rest parameter: collect remaining args into array
+        lv_pname = lv_param+3.
+        DATA lt_rest TYPE zif_mjs=>tt_nodes.
+        DATA lv_ri TYPE i.
+        lv_ri = lv_idx.
+        WHILE lv_ri <= lv_nargs.
+          DATA lr_rest_arg TYPE REF TO data.
+          READ TABLE it_args INDEX lv_ri INTO lr_rest_arg.
+          IF sy-subrc = 0. APPEND lr_rest_arg TO lt_rest. ENDIF.
+          lv_ri = lv_ri + 1.
+        ENDWHILE.
+        lo_call_env->define( iv_name = lv_pname is_val = array_val( lt_rest ) ).
+        EXIT.
+      ELSE.
+        lv_pname = lv_param.
       ENDIF.
+      DATA ls_pval TYPE zif_mjs=>ty_value.
+      DATA lr_parg TYPE REF TO data.
+      READ TABLE it_args INDEX lv_idx INTO lr_parg.
+      IF sy-subrc = 0.
+        ls_pval = unbox_value( lr_parg ).
+      ELSE.
+        CLEAR ls_pval.  " undefined
+      ENDIF.
+      lo_call_env->define( iv_name = lv_pname is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
-    LOOP AT is_fn-body INTO DATA(lr_stmt).
+
+    " Bind 'arguments' pseudo-array (all actual args)
+    lo_call_env->define( iv_name = `arguments` is_val = array_val( it_args ) ).
+
+    " Execute body
+    LOOP AT <fn>-body INTO DATA(lr_stmt).
       rs_val = eval_node( ir_node = lr_stmt io_env = lo_call_env ).
       IF lo_call_env->returning = abap_true.
         rs_val = lo_call_env->ret_val.
         EXIT.
       ENDIF.
     ENDLOOP.
+
+    " Write back 'this' mutations (for constructor use)
     IF ir_this IS BOUND.
       ASSIGN ir_this->* TO <this>.
       IF <this>-type = 6.
@@ -584,6 +646,201 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDIF.
+  ENDMETHOD.
+
+  METHOD compile_function.
+    FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    ASSIGN ir_fn->* TO <fn>.
+
+    " Assign slot indices to all params and local var declarations
+    DATA lt_map TYPE zif_mjs=>tt_slot_map.
+    DATA lv_next TYPE i VALUE 1.  " 1-based (READ TABLE ... INDEX)
+
+    " Params first
+    LOOP AT <fn>-params INTO DATA(lv_param).
+      DATA lv_pname TYPE string.
+      IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
+        lv_pname = lv_param+3.
+      ELSE.
+        lv_pname = lv_param.
+      ENDIF.
+      READ TABLE lt_map WITH TABLE KEY name = lv_pname TRANSPORTING NO FIELDS.
+      IF sy-subrc <> 0.
+        DATA ls_se TYPE zif_mjs=>ty_slot_entry.
+        ls_se-name = lv_pname.
+        ls_se-slot = lv_next.
+        INSERT ls_se INTO TABLE lt_map.
+        lv_next = lv_next + 1.
+      ENDIF.
+    ENDLOOP.
+
+    " Walk body to collect var/let/const/function declarations
+    LOOP AT <fn>-body INTO DATA(lr_s).
+      CALL METHOD collect_slots
+        EXPORTING ir_node = lr_s
+        CHANGING  ct_map  = lt_map
+                  cv_next = lv_next.
+    ENDLOOP.
+
+    " Store compiled slot info on function (shared across calls)
+    <fn>-max_slots = lv_next - 1.
+    CREATE DATA <fn>-slot_map LIKE lt_map.
+    <fn>-slot_map->* = lt_map.
+    <fn>-compiled = abap_true.
+
+    " Annotate AST nodes with slot indices (fast-path ident/var/assign)
+    LOOP AT <fn>-body INTO lr_s.
+      annotate_slots( ir_node = lr_s ir_map = <fn>-slot_map ).
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD collect_slots.
+    IF ir_node IS NOT BOUND. RETURN. ENDIF.
+    FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_node->* TO <n>.
+
+    CASE <n>-kind.
+      WHEN zif_mjs=>c_node_var.
+        " var/let/const declaration
+        READ TABLE ct_map WITH TABLE KEY name = <n>-str TRANSPORTING NO FIELDS.
+        IF sy-subrc <> 0.
+          DATA ls_se TYPE zif_mjs=>ty_slot_entry.
+          ls_se-name = <n>-str.
+          ls_se-slot = cv_next.
+          INSERT ls_se INTO TABLE ct_map.
+          cv_next = cv_next + 1.
+        ENDIF.
+        " Recurse into initializer (may contain nested vars via comma-expr)
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-right
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+
+      WHEN zif_mjs=>c_node_func_decl.
+        " Named function declaration: the name itself is a local
+        IF <n>-str IS NOT INITIAL.
+          READ TABLE ct_map WITH TABLE KEY name = <n>-str TRANSPORTING NO FIELDS.
+          IF sy-subrc <> 0.
+            DATA ls_se2 TYPE zif_mjs=>ty_slot_entry.
+            ls_se2-name = <n>-str.
+            ls_se2-slot = cv_next.
+            INSERT ls_se2 INTO TABLE ct_map.
+            cv_next = cv_next + 1.
+          ENDIF.
+        ENDIF.
+        " Do NOT descend into function body (separate scope)
+
+      WHEN OTHERS.
+        " Recurse into all child nodes (but not nested function bodies)
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-left
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-right
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-cond
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-init
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+        CALL METHOD collect_slots
+          EXPORTING ir_node = <n>-update
+          CHANGING  ct_map  = ct_map
+                    cv_next = cv_next.
+        LOOP AT <n>-body INTO DATA(lr_b).
+          CALL METHOD collect_slots
+            EXPORTING ir_node = lr_b
+            CHANGING  ct_map  = ct_map
+                      cv_next = cv_next.
+        ENDLOOP.
+        LOOP AT <n>-els INTO DATA(lr_e).
+          CALL METHOD collect_slots
+            EXPORTING ir_node = lr_e
+            CHANGING  ct_map  = ct_map
+                      cv_next = cv_next.
+        ENDLOOP.
+        LOOP AT <n>-args INTO DATA(lr_a).
+          CALL METHOD collect_slots
+            EXPORTING ir_node = lr_a
+            CHANGING  ct_map  = ct_map
+                      cv_next = cv_next.
+        ENDLOOP.
+        LOOP AT <n>-cases INTO DATA(ls_sc).
+          LOOP AT ls_sc-body INTO DATA(lr_cb).
+            CALL METHOD collect_slots
+              EXPORTING ir_node = lr_cb
+              CHANGING  ct_map  = ct_map
+                        cv_next = cv_next.
+          ENDLOOP.
+        ENDLOOP.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD annotate_slots.
+    IF ir_node IS NOT BOUND. RETURN. ENDIF.
+    FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_node->* TO <n>.
+
+    CASE <n>-kind.
+      WHEN zif_mjs=>c_node_ident.
+        READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm>).
+        IF sy-subrc = 0.
+          <n>-slot    = <sm>-slot.
+          <n>-slot_ok = abap_true.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_var.
+        READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm2>).
+        IF sy-subrc = 0.
+          <n>-slot    = <sm2>-slot.
+          <n>-slot_ok = abap_true.
+        ENDIF.
+        annotate_slots( ir_node = <n>-right ir_map = ir_map ).
+
+      WHEN zif_mjs=>c_node_assign.
+        READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm3>).
+        IF sy-subrc = 0.
+          <n>-slot    = <sm3>-slot.
+          <n>-slot_ok = abap_true.
+        ENDIF.
+        annotate_slots( ir_node = <n>-right ir_map = ir_map ).
+
+      WHEN zif_mjs=>c_node_func_decl.
+        " Function name gets a slot annotation; do NOT descend into body
+        IF <n>-str IS NOT INITIAL.
+          READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm4>).
+          IF sy-subrc = 0.
+            <n>-slot    = <sm4>-slot.
+            <n>-slot_ok = abap_true.
+          ENDIF.
+        ENDIF.
+
+      WHEN OTHERS.
+        annotate_slots( ir_node = <n>-left   ir_map = ir_map ).
+        annotate_slots( ir_node = <n>-right  ir_map = ir_map ).
+        annotate_slots( ir_node = <n>-cond   ir_map = ir_map ).
+        annotate_slots( ir_node = <n>-init   ir_map = ir_map ).
+        annotate_slots( ir_node = <n>-update ir_map = ir_map ).
+        LOOP AT <n>-body INTO DATA(lr_b).
+          annotate_slots( ir_node = lr_b ir_map = ir_map ).
+        ENDLOOP.
+        LOOP AT <n>-els INTO DATA(lr_e).
+          annotate_slots( ir_node = lr_e ir_map = ir_map ).
+        ENDLOOP.
+        LOOP AT <n>-args INTO DATA(lr_a).
+          annotate_slots( ir_node = lr_a ir_map = ir_map ).
+        ENDLOOP.
+        LOOP AT <n>-cases INTO DATA(ls_sc).
+          LOOP AT ls_sc-body INTO DATA(lr_cb).
+            annotate_slots( ir_node = lr_cb ir_map = ir_map ).
+          ENDLOOP.
+        ENDLOOP.
+    ENDCASE.
   ENDMETHOD.
 
   METHOD eval_node.
@@ -615,9 +872,40 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
       WHEN zif_mjs=>c_node_ident.
-        rs_val = io_env->get( <n>-str ).
+        " Fast path: direct slot read (no hash lookup)
+        IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+          io_env->get_slot( EXPORTING iv_slot = <n>-slot RECEIVING rs_val = rs_val ).
+        ELSE.
+          rs_val = io_env->get( <n>-str ).
+        ENDIF.
 
       WHEN zif_mjs=>c_node_binop.
+        " Short-circuit operators: evaluate left only, return early if decided
+        IF <n>-op = `&&`.
+          DATA(ls_blsc) = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF is_true( ls_blsc ) = abap_false.
+            rs_val = ls_blsc.
+          ELSE.
+            rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
+          ENDIF.
+          RETURN.
+        ELSEIF <n>-op = `||`.
+          DATA(ls_blor) = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF is_true( ls_blor ) = abap_true.
+            rs_val = ls_blor.
+          ELSE.
+            rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
+          ENDIF.
+          RETURN.
+        ELSEIF <n>-op = `??`.
+          DATA(ls_blnc) = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF ls_blnc-type <> 0 AND ls_blnc-type <> 5.
+            rs_val = ls_blnc.
+          ELSE.
+            rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
+          ENDIF.
+          RETURN.
+        ENDIF.
         DATA(ls_bl) = eval_node( ir_node = <n>-left io_env = io_env ).
         DATA(ls_br) = eval_node( ir_node = <n>-right io_env = io_env ).
         rs_val = eval_bin_op( iv_op = <n>-op is_left = ls_bl is_right = ls_br ).
@@ -633,7 +921,12 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_assign.
         DATA(ls_aval) = eval_node( ir_node = <n>-right io_env = io_env ).
-        io_env->set( iv_name = <n>-str is_val = ls_aval ).
+        " Fast path: direct slot write
+        IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+          io_env->set_slot( iv_slot = <n>-slot is_val = ls_aval ).
+        ELSE.
+          io_env->set( iv_name = <n>-str is_val = ls_aval ).
+        ENDIF.
         rs_val = ls_aval.
 
       WHEN zif_mjs=>c_node_member_assign.
@@ -651,11 +944,15 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_var.
         DATA ls_vval TYPE zif_mjs=>ty_value.
-        ls_vval = undefined_val( ).
         IF <n>-right IS BOUND.
           ls_vval = eval_node( ir_node = <n>-right io_env = io_env ).
         ENDIF.
-        io_env->define( iv_name = <n>-str is_val = ls_vval ).
+        " Fast path: direct slot write
+        IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+          io_env->set_slot( iv_slot = <n>-slot is_val = ls_vval ).
+        ELSE.
+          io_env->define( iv_name = <n>-str is_val = ls_vval ).
+        ENDIF.
         rs_val = ls_vval.
 
       WHEN zif_mjs=>c_node_if.
@@ -781,14 +1078,12 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         DATA(ls_fn) = io_env->get( <n>-str ).
         IF ls_fn-type = 4 AND ls_fn-fn IS BOUND.
-          FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
-          ASSIGN ls_fn-fn->* TO <fn>.
           DATA lt_call_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
           CLEAR lt_call_args.
           LOOP AT <n>-args INTO DATA(lr_fa).
             APPEND box_value( eval_node( ir_node = lr_fa io_env = io_env ) ) TO lt_call_args.
           ENDLOOP.
-          rs_val = call_function( is_fn = <fn> it_args = lt_call_args io_env = io_env ).
+          rs_val = call_function( ir_fn = ls_fn-fn it_args = lt_call_args io_env = io_env ).
         ENDIF.
 
       WHEN zif_mjs=>c_node_method_call.
@@ -820,7 +1115,12 @@ CLASS zcl_mjs IMPLEMENTATION.
         ls_fnval-type = 4.
         ls_fnval-fn   = lr_fn_data.
         IF <n>-str IS NOT INITIAL.
-          io_env->define( iv_name = <n>-str is_val = ls_fnval ).
+          " Fast path: write to slot if annotated
+          IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+            io_env->set_slot( iv_slot = <n>-slot is_val = ls_fnval ).
+          ELSE.
+            io_env->define( iv_name = <n>-str is_val = ls_fnval ).
+          ENDIF.
         ENDIF.
         rs_val = ls_fnval.
 
@@ -961,11 +1261,9 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF lr_ctor IS BOUND.
             DATA(ls_ctor_val) = unbox_value( lr_ctor ).
             IF ls_ctor_val-type = 4 AND ls_ctor_val-fn IS BOUND.
-              FIELD-SYMBOLS <ctor_fn> TYPE zif_mjs=>ty_function.
-              ASSIGN ls_ctor_val-fn->* TO <ctor_fn>.
               DATA lr_inst_ref TYPE REF TO data.
               lr_inst_ref = box_value( ls_instance ).
-              call_function( is_fn = <ctor_fn> it_args = lt_new_args io_env = io_env
+              call_function( ir_fn = ls_ctor_val-fn it_args = lt_new_args io_env = io_env
                              ir_this = lr_inst_ref ).
               ls_instance = unbox_value( lr_inst_ref ).
             ENDIF.
@@ -1081,11 +1379,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF lr_meth IS BOUND.
           DATA(ls_mval) = unbox_value( lr_meth ).
           IF ls_mval-type = 4 AND ls_mval-fn IS BOUND.
-            FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
-            ASSIGN ls_mval-fn->* TO <fn>.
             DATA lr_this TYPE REF TO data.
             lr_this = box_value( is_obj ).
-            rs_val = call_function( is_fn = <fn> it_args = it_args io_env = io_env
+            rs_val = call_function( ir_fn = ls_mval-fn it_args = it_args io_env = io_env
                                     ir_this = lr_this ).
             IF ir_obj_node IS BOUND.
               FIELD-SYMBOLS <on> TYPE zif_mjs=>ty_node.
@@ -1273,3 +1569,256 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
+
+* === Dependency context for ZCL_MJS (4 deps) ===
+
+* --- ZIF_MJS (interface, 2 methods) ---
+INTERFACE zif_mjs PUBLIC.
+
+  " Value types: 0=undefined, 1=number, 2=string, 3=bool,
+  "              4=function, 5=null, 6=object, 7=array
+  TYPES:
+    BEGIN OF ty_value,
+      type TYPE i,
+      num  TYPE f,
+      str  TYPE string,
+      obj  TYPE REF TO zcl_mjs_obj,
+      arr  TYPE REF TO zcl_mjs_arr,
+      fn   TYPE REF TO data,
+    END OF ty_value,
+    tt_value_slots TYPE STANDARD TABLE OF ty_value WITH DEFAULT KEY.
+
+  " Token: 0=number, 1=string, 2=ident, 3=op, 4=punc, 5=eof
+  TYPES:
+    BEGIN OF ty_token,
+      kind TYPE i,
+      val  TYPE string,
+    END OF ty_token,
+    tt_tokens TYPE STANDARD TABLE OF ty_token WITH DEFAULT KEY.
+
+  " Node references table (for RETURNING parameters)
+  TYPES tt_nodes TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+
+  " Switch case
+  TYPES:
+    BEGIN OF ty_switch_case,
+      expr TYPE REF TO data,
+      body TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+    END OF ty_switch_case,
+    tt_switch_cases TYPE STANDARD TABLE OF ty_switch_case WITH DEFAULT KEY.
+
+  " Class method
+  TYPES:
+    BEGIN OF ty_class_method,
+      name    TYPE string,
+      params  TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      body    TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      is_ctor TYPE abap_bool,
+    END OF ty_class_method,
+    tt_class_methods TYPE STANDARD TABLE OF ty_class_method WITH DEFAULT KEY.
+
+  " Slot map entry: name -> slot index (1-based, for READ TABLE ... INDEX)
+  TYPES:
+    BEGIN OF ty_slot_entry,
+      name TYPE string,
+      slot TYPE i,
+    END OF ty_slot_entry,
+    tt_slot_map TYPE HASHED TABLE OF ty_slot_entry WITH UNIQUE KEY name.
+
+  " Node kinds
+  CONSTANTS:
+    c_node_number        TYPE i VALUE 0,
+    c_node_string        TYPE i VALUE 1,
+    c_node_ident         TYPE i VALUE 2,
+    c_node_binop         TYPE i VALUE 3,
+    c_node_unaryop       TYPE i VALUE 4,
+    c_node_assign        TYPE i VALUE 5,
+    c_node_var           TYPE i VALUE 6,
+    c_node_if            TYPE i VALUE 7,
+    c_node_while         TYPE i VALUE 8,
+    c_node_block         TYPE i VALUE 9,
+    c_node_call          TYPE i VALUE 10,
+    c_node_func_decl     TYPE i VALUE 11,
+    c_node_return        TYPE i VALUE 12,
+    c_node_object        TYPE i VALUE 13,
+    c_node_array         TYPE i VALUE 14,
+    c_node_member_access TYPE i VALUE 15,
+    c_node_member_assign TYPE i VALUE 16,
+    c_node_method_call   TYPE i VALUE 17,
+    c_node_for           TYPE i VALUE 18,
+    c_node_switch        TYPE i VALUE 19,
+    c_node_typeof        TYPE i VALUE 20,
+    c_node_new           TYPE i VALUE 21,
+    c_node_class         TYPE i VALUE 22,
+    c_node_break         TYPE i VALUE 23,
+    c_node_continue      TYPE i VALUE 24,
+    c_node_bool          TYPE i VALUE 25,
+    c_node_try           TYPE i VALUE 26,
+    c_node_throw         TYPE i VALUE 27.
+
+  " AST Node
+  TYPES:
+    BEGIN OF ty_node,
+      kind      TYPE i,
+      num       TYPE f,
+      str       TYPE string,
+      op        TYPE string,
+      left      TYPE REF TO data,
+      right     TYPE REF TO data,
+      args      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      body      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      params    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      cond      TYPE REF TO data,
+      els       TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      init      TYPE REF TO data,
+      update    TYPE REF TO data,
+      object    TYPE REF TO data,
+      property  TYPE string,
+      prop_expr TYPE REF TO data,
+      cases     TYPE tt_switch_cases,
+      methods   TYPE tt_class_methods,
+      " Slot optimization: pre-assigned local variable index (1-based)
+      slot      TYPE i,
+      slot_ok   TYPE abap_bool,
+    END OF ty_node.
+
+  " Function (closure is REF TO object to break circular dep with zcl_mjs_env)
+  TYPES:
+    BEGIN OF ty_function,
+      name      TYPE string,
+      params    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      body      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      closure   TYPE REF TO object,
+      compiled  TYPE abap_bool,
+      max_slots TYPE i,
+      slot_map  TYPE REF TO tt_slot_map,
+    END OF ty_function.
+
+ENDINTERFACE.
+
+* --- ZCL_MJS_ENV (class, 8 methods) ---
+CLASS zcl_mjs_env DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    TYPES:
+      BEGIN OF ty_var_entry,
+        name TYPE string,
+        val  TYPE zif_mjs=>ty_value,
+      END OF ty_var_entry,
+      tt_vars TYPE HASHED TABLE OF ty_var_entry WITH UNIQUE KEY name.
+    " Hash-based storage (global env, closures, catch envs)
+    DATA vars       TYPE tt_vars.
+    " Slot-based storage (function-local envs): direct index access, no hash
+    DATA slots      TYPE zif_mjs=>tt_value_slots.
+    DATA slot_map   TYPE REF TO zif_mjs=>tt_slot_map.
+    DATA parent     TYPE REF TO zcl_mjs_env.
+    DATA output     TYPE REF TO data.
+    DATA returning  TYPE abap_bool.
+    DATA ret_val    TYPE zif_mjs=>ty_value.
+    DATA breaking   TYPE abap_bool.
+    DATA continuing TYPE abap_bool.
+    METHODS constructor
+      IMPORTING io_parent TYPE REF TO zcl_mjs_env OPTIONAL.
+    METHODS get
+      IMPORTING iv_name       TYPE string
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+    METHODS set
+      IMPORTING iv_name TYPE string
+                is_val  TYPE zif_mjs=>ty_value.
+    METHODS define
+      IMPORTING iv_name TYPE string
+                is_val  TYPE zif_mjs=>ty_value.
+    METHODS get_slot
+      IMPORTING iv_slot       TYPE i
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+    METHODS set_slot
+      IMPORTING iv_slot TYPE i
+                is_val  TYPE zif_mjs=>ty_value.
+    METHODS append_output
+      IMPORTING iv_text TYPE string.
+    METHODS get_output
+      RETURNING VALUE(rv_out) TYPE string.
+ENDCLASS.
+
+* --- ZCL_MJS_PARSER (class, 31 methods) ---
+CLASS zcl_mjs_parser DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    DATA tokens TYPE zif_mjs=>tt_tokens.
+    DATA pos    TYPE i.
+    METHODS constructor
+      IMPORTING it_tokens TYPE zif_mjs=>tt_tokens.
+    METHODS peek
+      RETURNING VALUE(rs_tok) TYPE zif_mjs=>ty_token.
+    METHODS next
+      RETURNING VALUE(rs_tok) TYPE zif_mjs=>ty_token.
+    METHODS expect
+      IMPORTING iv_val TYPE string.
+    METHODS parse_program
+      RETURNING VALUE(rt_stmts) TYPE zif_mjs=>tt_nodes.
+    METHODS parse_statement
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_var
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_if
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_while
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_for
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_switch
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_class
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_func
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_return
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_block
+      RETURNING VALUE(rt_stmts) TYPE zif_mjs=>tt_nodes.
+    METHODS parse_body
+      RETURNING VALUE(rt_stmts) TYPE zif_mjs=>tt_nodes.
+    METHODS parse_expr
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_assign
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_or
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_and
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_equality
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_comparison
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_add_sub
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_mul_div
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_unary
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_postfix
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_primary
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_array_literal
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_object_literal
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_try_catch
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_throw
+      RETURNING VALUE(rr_node) TYPE REF TO data.
+ENDCLASS.
+
+* --- ZCX_MJS_THROW (class, 1 methods) ---
+CLASS zcx_mjs_throw DEFINITION
+  PUBLIC
+  INHERITING FROM cx_no_check
+  FINAL
+  CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    DATA val TYPE zif_mjs=>ty_value.
+    METHODS constructor
+      IMPORTING is_val TYPE zif_mjs=>ty_value OPTIONAL.
+ENDCLASS.
+
+* Context stats: 4 deps found, 4 resolved, 0 failed

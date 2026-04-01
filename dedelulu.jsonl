@@ -1,0 +1,2 @@
+{"ts": "2026-04-01T06:52:45.346932", "event": "start", "command": ["help", "explore"], "pid": 3074071, "provider": "azure", "idle_seconds": 4.0}
+{"ts": "2026-04-01T06:52:45.362058", "event": "exit", "code": 1, "total_responses": 0}

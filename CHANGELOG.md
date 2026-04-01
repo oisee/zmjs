@@ -4,6 +4,30 @@ All notable changes to ZMJS are documented here.
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-04-01
+
+### Added
+- **Slot-based variable optimization (ABAP)** — function-local variables now stored in a pre-sized
+  `STANDARD TABLE` with direct index access instead of per-call hash-table allocation
+  - `compile_function`: lazy compile pass on first call, assigns integer slots to params + `var`/`let`/`const` declarations
+  - `collect_slots` + `annotate_slots`: AST prepass annotates `ident`/`var`/`assign`/`func_decl` nodes with slot index
+  - `zcl_mjs_env`: new `slots` (STANDARD TABLE) + `slot_map` (shared REF TO HASHED TABLE) fields; `get_slot`/`set_slot` methods
+  - Expected speedup: significant reduction in env lookup cost for all function-local variable access
+- **Short-circuit `&&` / `||` / `??` (ABAP)** — now properly short-circuits and returns the deciding operand value
+  (was: both sides evaluated eagerly, result collapsed to boolean)
+- **`arguments` object (ABAP)** — bound in every function call as an array-like of all actual arguments
+- **`NodeFuncExpr` (Go)** — function expressions no longer define the name in the outer scope
+  - `typeof someVar` after `var x = (function someVar(){})()` now correctly returns `"undefined"`
+- **`delete` operator (Go)** — `delete obj.prop` removes property and returns `true`; `delete var` returns `false`
+- **`void` operator (Go)** — `void expr` evaluates and returns `undefined`
+- **`arguments` object (Go)** — bound in every function call (skipped if a formal param is named `arguments`)
+- **Abstract equality `==` / `!=` (Go)** — proper null==undefined, number/string coercion, boolean coercion
+- **Numeric edge cases (Go)** — `1/0` → `Infinity`, `-1/0` → `-Infinity`, `0/0` → `NaN`, `%` uses `math.Mod`
+- **`toString()` (Go)** — `NaN`, `Infinity`, `-Infinity` now format correctly
+
+### Tests
+- Go test262: **PASS=242 FAIL=24** out of 266 tests (was 232 in v0.3.1)
+
 ## [0.3.1] — 2026-04-01
 
 ### Added

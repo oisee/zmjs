@@ -10,7 +10,8 @@ INTERFACE zif_mjs PUBLIC.
       obj  TYPE REF TO zcl_mjs_obj,
       arr  TYPE REF TO zcl_mjs_arr,
       fn   TYPE REF TO data,
-    END OF ty_value.
+    END OF ty_value,
+    tt_value_slots TYPE STANDARD TABLE OF ty_value WITH DEFAULT KEY.
 
   " Token: 0=number, 1=string, 2=ident, 3=op, 4=punc, 5=eof
   TYPES:
@@ -40,6 +41,14 @@ INTERFACE zif_mjs PUBLIC.
       is_ctor TYPE abap_bool,
     END OF ty_class_method,
     tt_class_methods TYPE STANDARD TABLE OF ty_class_method WITH DEFAULT KEY.
+
+  " Slot map entry: name -> slot index (1-based, for READ TABLE ... INDEX)
+  TYPES:
+    BEGIN OF ty_slot_entry,
+      name TYPE string,
+      slot TYPE i,
+    END OF ty_slot_entry,
+    tt_slot_map TYPE HASHED TABLE OF ty_slot_entry WITH UNIQUE KEY name.
 
   " Node kinds
   CONSTANTS:
@@ -93,15 +102,22 @@ INTERFACE zif_mjs PUBLIC.
       prop_expr TYPE REF TO data,
       cases     TYPE tt_switch_cases,
       methods   TYPE tt_class_methods,
+      " Slot optimization: pre-assigned local variable index (1-based)
+      slot      TYPE i,         " 0 = not assigned
+      slot_ok   TYPE abap_bool, " X = use slot, ' ' = use name-based lookup
     END OF ty_node.
 
   " Function (closure is REF TO object to break circular dep with zcl_mjs_env)
   TYPES:
     BEGIN OF ty_function,
-      name    TYPE string,
-      params  TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
-      body    TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      closure TYPE REF TO object,
+      name      TYPE string,
+      params    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      body      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      closure   TYPE REF TO object,
+      " Slot optimization: populated once on first call (lazy compile)
+      compiled  TYPE abap_bool,          " X = slots already assigned
+      max_slots TYPE i,                  " number of slot entries needed
+      slot_map  TYPE REF TO tt_slot_map, " shared ref — allocated once, reused across calls
     END OF ty_function.
 
 ENDINTERFACE.
