@@ -19,7 +19,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_or_chain FOR TESTING.
     METHODS test_space_handling FOR TESTING.
     METHODS test_string_method_call FOR TESTING.
-    METHODS test_class_expr FOR TESTING.
+    METHODS test_anonymous_class FOR TESTING.
     METHODS test262 FOR TESTING.
 
     METHODS trim
@@ -206,7 +206,7 @@ CLASS ltcl_test IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD test_class_expr.
+  METHOD test_anonymous_class.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     DATA(lv_js) =
       `var FileFile = class {` && lv_nl &&

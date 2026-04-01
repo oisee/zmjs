@@ -340,7 +340,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
   METHOD parse_class.
     next( ).
-    DATA(lv_name) = next( )-val.
+    DATA lv_name TYPE string.
+    IF peek( )-val <> `{`.
+      lv_name = next( )-val.
+    ENDIF.
     expect( `{` ).
     DATA lt_methods TYPE zif_mjs=>tt_class_methods.
     WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
@@ -760,6 +763,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
     IF ls_t-val = `function`.
       rr_node = parse_func( ).
+      RETURN.
+    ENDIF.
+
+    IF ls_t-val = `class`.
+      rr_node = parse_class( ).
       RETURN.
     ENDIF.
 
