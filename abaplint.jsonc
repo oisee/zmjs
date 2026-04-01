@@ -1,6 +1,9 @@
 {
   "global": {
-    "files": "/src/**/*.*"
+    "files": "/src/**/*.*",
+    "exclude": [
+      "/src/zmjs_test262.prog.abap"
+    ]
   },
   "dependencies": [
     {

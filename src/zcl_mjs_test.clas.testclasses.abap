@@ -90,9 +90,8 @@ CLASS lcl_test IMPLEMENTATION.
       `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
 
     DATA(lv_r) = zcl_mjs=>eval( lv_js ).
-    cl_abap_unit_assert=>assert_cs(
-      act = lv_r
-      exp = |PASS=45 FAIL=0|
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |PASS=45 FAIL=0| )
       msg = |Test262: expected PASS=45 FAIL=0, got: { lv_r }| ).
   ENDMETHOD.
 
@@ -112,9 +111,8 @@ CLASS lcl_test IMPLEMENTATION.
     DATA(lv_r) = zcl_mjs=>eval( lv_js ).
     GET RUN TIME FIELD lv_t2.
     DATA(lv_ms) = ( lv_t2 - lv_t1 ) / 1000.
-    cl_abap_unit_assert=>assert_cs(
-      act = lv_r
-      exp = |fib(20)=6765|
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |fib(20)=6765| )
       msg = |fib(20) expected 6765, got: { lv_r }| ).
   ENDMETHOD.
 
@@ -131,9 +129,8 @@ CLASS lcl_test IMPLEMENTATION.
     DATA(lv_r) = zcl_mjs=>eval( lv_js ).
     GET RUN TIME FIELD lv_t2.
     DATA(lv_ms) = ( lv_t2 - lv_t1 ) / 1000.
-    cl_abap_unit_assert=>assert_cs(
-      act = lv_r
-      exp = |sum=49995000|
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |sum=49995000| )
       msg = |loop sum expected 49995000, got: { lv_r }| ).
   ENDMETHOD.
 
