@@ -4,6 +4,38 @@ All notable changes to ZMJS are documented here.
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-04-01
+
+### Performance
+
+- **Eliminated `arguments` object allocation for functions that don't use it** — `compile_function` now
+  scans the body with `scan_for_ident` and sets `needs_arguments TYPE abap_bool` on `ty_function`;
+  `call_function` skips `CREATE OBJECT zcl_mjs_arr` + populate unless needed.
+  Saves ~2 heap allocations per call for typical functions like `fib`.
+
+- **Args passed as `tt_value_slots` (direct values) instead of `tt_nodes` (boxed REF TO data)** —
+  eliminated `box_value` (`CREATE DATA`) + `unbox_value` (pointer deref) round-trip for every
+  argument of every function call. `call_function` and `eval_method_call` now take
+  `it_args TYPE zif_mjs=>tt_value_slots`; call sites build the table with plain `eval_node` results.
+  Added `array_from_slots` helper for the cases that still need a JS array (rest params, `arguments`).
+
+- **Inlined slot access in `eval_node`** — replaced `io_env->get_slot(...)` and `io_env->set_slot(...)`
+  method calls with direct `READ TABLE io_env->slots INDEX n INTO/ASSIGNING` at the four hot call sites
+  (`c_node_ident`, `c_node_assign`, `c_node_var`, `c_node_func_decl`). Saves one method dispatch per
+  local variable read/write.
+
+- **Inlined trivial value constructors** — `number_val`, `string_val`, `bool_val`, `undefined_val` are
+  no longer called for the high-frequency paths; replaced with direct field assignment (`rs_val-type = 1.
+  rs_val-num = x.`) in `eval_node` (literals, unary, early returns) and throughout `eval_bin_op`
+  (arithmetic, comparisons, equality, string concat). Saves one method dispatch per value produced.
+
+### Results
+
+| Benchmark | Before (0.3.2) | After (0.3.3) | Δ |
+|-----------|---------------|---------------|---|
+| fib(20) | 525 ms | 378 ms | **−28%** |
+| loop 10K | 157 ms | 149 ms | **−5%** |
+
 ## [0.3.2] — 2026-04-01
 
 ### Added

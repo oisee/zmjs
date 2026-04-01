@@ -110,14 +110,15 @@ INTERFACE zif_mjs PUBLIC.
   " Function (closure is REF TO object to break circular dep with zcl_mjs_env)
   TYPES:
     BEGIN OF ty_function,
-      name      TYPE string,
-      params    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
-      body      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      closure   TYPE REF TO object,
+      name            TYPE string,
+      params          TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      body            TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      closure         TYPE REF TO object,
       " Slot optimization: populated once on first call (lazy compile)
-      compiled  TYPE abap_bool,          " X = slots already assigned
-      max_slots TYPE i,                  " number of slot entries needed
-      slot_map  TYPE REF TO tt_slot_map, " shared ref — allocated once, reused across calls
+      compiled        TYPE abap_bool,          " X = slots already assigned
+      max_slots       TYPE i,                  " number of slot entries needed
+      slot_map        TYPE REF TO tt_slot_map, " shared ref — allocated once, reused across calls
+      needs_arguments TYPE abap_bool,          " X = function references 'arguments' pseudo-array
     END OF ty_function.
 
 ENDINTERFACE.
