@@ -1433,6 +1433,8 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDIF.
           ENDIF.
+        ELSE.
+          " todo, throw?
         ENDIF.
       WHEN 7.
         CASE iv_method.
@@ -1443,6 +1445,8 @@ CLASS zcl_mjs IMPLEMENTATION.
               is_obj-arr->push( box_value( ls_push_arg ) ).
               rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
             ENDIF.
+          WHEN OTHERS.
+          " todo, throw?
         ENDCASE.
       WHEN 2.
         CASE iv_method.
@@ -1530,7 +1534,11 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = number_val( 0 ).
             ENDIF.
+          WHEN OTHERS.
+" todo, throw?
         ENDCASE.
+      WHEN OTHERS.
+" todo, throw?
     ENDCASE.
   ENDMETHOD.
 

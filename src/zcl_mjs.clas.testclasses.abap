@@ -198,7 +198,10 @@ CLASS ltcl_test IMPLEMENTATION.
     TRY.
         zcl_mjs=>eval( lv_js ).
         cl_abap_unit_assert=>fail( |Expected error for calling non-existent method| ).
-      CATCH cx_static_check.
+      CATCH zcx_mjs_runtime.
+        " Success: Exception caught
+      CATCH cx_root INTO DATA(lx).
+        cl_abap_unit_assert=>fail( |Expected zcx_mjs_runtime, but got { cl_abap_classdescr=>get_class_name( lx ) }| ).
     ENDTRY.
   ENDMETHOD.
 

@@ -22,6 +22,7 @@
     "check_include": true,
     "check_syntax": true,
     "check_transformation_exists": true,
+    "keyword_case": true,
     "dynpro_checks": true,
     "global_class": true,
     "identical_form_names": true,
