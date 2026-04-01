@@ -128,11 +128,55 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
       ENDIF.
 
-      " Number
+      " Number: decimal, hex (0x/0X), scientific (1e5)
       IF lv_ch >= `0` AND lv_ch <= `9`.
+        DATA lv_ni   TYPE i.
+        DATA lv_d    TYPE c LENGTH 1.
+        DATA lv_numlen TYPE i.
+        DATA lv_echar  TYPE c LENGTH 1.
+        DATA lv_esign  TYPE c LENGTH 1.
+        " Hex literal: 0x... or 0X...
+        IF lv_ch = `0` AND lv_i + 1 < lv_len.
+          lv_ni = lv_i + 1.
+          DATA lv_nhc TYPE c LENGTH 1.
+          lv_nhc = iv_src+lv_ni(1).
+          IF lv_nhc = `x` OR lv_nhc = `X`.
+            lv_j = lv_i + 2.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF ( lv_d >= `0` AND lv_d <= `9` )
+                 OR ( lv_d >= `a` AND lv_d <= `f` )
+                 OR ( lv_d >= `A` AND lv_d <= `F` ).
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            DATA lv_hexdig TYPE string.
+            DATA lv_hexval TYPE i.
+            DATA lv_hk     TYPE i.
+            DATA lv_hc     TYPE c LENGTH 1.
+            DATA lv_hpos   TYPE i.
+            lv_hexdig = `0123456789abcdef`.
+            lv_hexval = 0.
+            DO lv_j - lv_i - 2 TIMES.
+              lv_hk = lv_i + 1 + sy-index.
+              lv_hc = iv_src+lv_hk(1).
+              TRANSLATE lv_hc TO LOWER CASE.
+              FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              lv_hexval = lv_hexval * 16 + lv_hpos.
+            ENDDO.
+            CLEAR ls_tok.
+            ls_tok-kind = 0.
+            ls_tok-val  = |{ lv_hexval }|.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ENDIF.
+        ENDIF.
+        " Decimal + optional scientific exponent
         lv_j = lv_i.
         WHILE lv_j < lv_len.
-          DATA lv_d TYPE c LENGTH 1.
           lv_d = iv_src+lv_j(1).
           IF ( lv_d >= `0` AND lv_d <= `9` ) OR lv_d = `.`.
             lv_j = lv_j + 1.
@@ -140,7 +184,26 @@ CLASS zcl_mjs IMPLEMENTATION.
             EXIT.
           ENDIF.
         ENDWHILE.
-        DATA lv_numlen TYPE i.
+        IF lv_j < lv_len.
+          lv_echar = iv_src+lv_j(1).
+          IF lv_echar = `e` OR lv_echar = `E`.
+            lv_j = lv_j + 1.
+            IF lv_j < lv_len.
+              lv_esign = iv_src+lv_j(1).
+              IF lv_esign = `+` OR lv_esign = `-`.
+                lv_j = lv_j + 1.
+              ENDIF.
+            ENDIF.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d >= `0` AND lv_d <= `9`.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+          ENDIF.
+        ENDIF.
         lv_numlen = lv_j - lv_i.
         CLEAR ls_tok.
         ls_tok-kind = 0.
@@ -243,6 +306,51 @@ CLASS zcl_mjs IMPLEMENTATION.
           ls_tok-val  = lv_two.
           APPEND ls_tok TO rt_tokens.
           lv_i = lv_i + 2.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
+      " Dot-prefixed number: .5, .0e1
+      IF lv_ch = `.` AND lv_i + 1 < lv_len.
+        DATA lv_ndot TYPE c LENGTH 1.
+        lv_ni = lv_i + 1.
+        lv_ndot = iv_src+lv_ni(1).
+        IF lv_ndot >= `0` AND lv_ndot <= `9`.
+          lv_j = lv_i.
+          WHILE lv_j < lv_len.
+            lv_d = iv_src+lv_j(1).
+            IF ( lv_d >= `0` AND lv_d <= `9` ) OR lv_d = `.`.
+              lv_j = lv_j + 1.
+            ELSE.
+              EXIT.
+            ENDIF.
+          ENDWHILE.
+          IF lv_j < lv_len.
+            lv_echar = iv_src+lv_j(1).
+            IF lv_echar = `e` OR lv_echar = `E`.
+              lv_j = lv_j + 1.
+              IF lv_j < lv_len.
+                lv_esign = iv_src+lv_j(1).
+                IF lv_esign = `+` OR lv_esign = `-`.
+                  lv_j = lv_j + 1.
+                ENDIF.
+              ENDIF.
+              WHILE lv_j < lv_len.
+                lv_d = iv_src+lv_j(1).
+                IF lv_d >= `0` AND lv_d <= `9`.
+                  lv_j = lv_j + 1.
+                ELSE.
+                  EXIT.
+                ENDIF.
+              ENDWHILE.
+            ENDIF.
+          ENDIF.
+          lv_numlen = lv_j - lv_i.
+          CLEAR ls_tok.
+          ls_tok-kind = 0.
+          ls_tok-val  = iv_src+lv_i(lv_numlen).
+          APPEND ls_tok TO rt_tokens.
+          lv_i = lv_j.
           CONTINUE.
         ENDIF.
       ENDIF.

@@ -701,7 +701,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       CREATE DATA lr_num.
       lr_num->kind = zif_mjs=>c_node_number.
       DATA lv_f TYPE f.
-      lv_f = ls_t-val.
+      DATA lv_numstr TYPE string.
+      lv_numstr = ls_t-val.
+      TRANSLATE lv_numstr TO UPPER CASE.
+      lv_f = lv_numstr.
       lr_num->num  = lv_f.
       rr_node = lr_num.
       RETURN.

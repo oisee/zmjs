@@ -770,10 +770,33 @@ func tokenize(src string) []Token {
 			for i < len(src) && src[i] != '\n' { i++ }
 			continue
 		}
-		// Number
-		if ch >= '0' && ch <= '9' {
+		// Number: decimal, hex (0x/0X), scientific (1e5), dot-leading (.5)
+		if ch == '.' && i+1 < len(src) && src[i+1] >= '0' && src[i+1] <= '9' {
 			j := i
 			for j < len(src) && (src[j] >= '0' && src[j] <= '9' || src[j] == '.') { j++ }
+			if j < len(src) && (src[j] == 'e' || src[j] == 'E') {
+				j++
+				if j < len(src) && (src[j] == '+' || src[j] == '-') { j++ }
+				for j < len(src) && src[j] >= '0' && src[j] <= '9' { j++ }
+			}
+			tokens = append(tokens, Token{0, src[i:j]})
+			i = j; continue
+		}
+		if ch >= '0' && ch <= '9' {
+			j := i
+			if ch == '0' && i+1 < len(src) && (src[i+1] == 'x' || src[i+1] == 'X') {
+				j = i + 2
+				for j < len(src) && (src[j] >= '0' && src[j] <= '9' || src[j] >= 'a' && src[j] <= 'f' || src[j] >= 'A' && src[j] <= 'F') { j++ }
+				val, _ := strconv.ParseInt(src[i+2:j], 16, 64)
+				tokens = append(tokens, Token{0, strconv.FormatInt(val, 10)})
+				i = j; continue
+			}
+			for j < len(src) && (src[j] >= '0' && src[j] <= '9' || src[j] == '.') { j++ }
+			if j < len(src) && (src[j] == 'e' || src[j] == 'E') {
+				j++
+				if j < len(src) && (src[j] == '+' || src[j] == '-') { j++ }
+				for j < len(src) && src[j] >= '0' && src[j] <= '9' { j++ }
+			}
 			tokens = append(tokens, Token{0, src[i:j]})
 			i = j; continue
 		}
