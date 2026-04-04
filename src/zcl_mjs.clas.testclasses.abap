@@ -24,6 +24,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_template_literal FOR TESTING.
     METHODS test_optional_chain FOR TESTING.
     METHODS test_substring_one_arg FOR TESTING.
+    METHODS test_extends FOR TESTING.
 
     METHODS test262 FOR TESTING.
 
@@ -242,6 +243,23 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |yes| ).
+  ENDMETHOD.
+
+  METHOD test_extends.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `class Animal {` && lv_nl &&
+      `  constructor(name) { this.name = name; }` && lv_nl &&
+      `  speak() { return this.name + " makes a noise."; }` && lv_nl &&
+      `}` && lv_nl &&
+      `class Dog extends Animal {` && lv_nl &&
+      `  speak() { return this.name + " barks."; }` && lv_nl &&
+      `}` && lv_nl &&
+      `let d = new Dog("Rex");` && lv_nl &&
+      `console.log(d.speak());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |Rex barks.| ).
   ENDMETHOD.
 
   METHOD test_substring_one_arg.
