@@ -1308,7 +1308,24 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDCASE.
 
       WHEN zif_mjs=>c_node_new.
-        DATA(ls_cls) = io_env->get( <n>-str ).
+        DATA lv_cls_name TYPE string.
+        DATA ls_cls      TYPE zif_mjs=>ty_value.
+        IF <n>-str IS NOT INITIAL.
+          lv_cls_name = <n>-str.
+        ENDIF.
+        IF <n>-left IS BOUND.
+          DATA(ls_cls_expr) = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF ls_cls_expr-type = 6 AND ls_cls_expr-obj IS BOUND.
+            ls_cls = ls_cls_expr.
+          ELSEIF ls_cls_expr-type = 4 AND ls_cls_expr-fn IS BOUND.
+            ls_cls = ls_cls_expr.
+          ENDIF.
+        ENDIF.
+
+        IF ls_cls-type IS INITIAL AND lv_cls_name IS NOT INITIAL.
+          ls_cls = io_env->get( lv_cls_name ).
+        ENDIF.
+
         IF ls_cls-type = 6 AND ls_cls-obj IS BOUND.
           DATA ls_instance TYPE zif_mjs=>ty_value.
           ls_instance = object_val( ).
@@ -1328,12 +1345,31 @@ CLASS zcl_mjs IMPLEMENTATION.
               ls_instance = unbox_value( lr_inst_ref ).
             ENDIF.
           ENDIF.
+          " IMPORTANT: don't overwrite this.prop with class methods if we already set them in ctor
           LOOP AT ls_cls-obj->props ASSIGNING FIELD-SYMBOL(<cp>).
             IF <cp>-key <> `constructor`.
-              ls_instance-obj->set( iv_key = <cp>-key ir_val = <cp>-val ).
+              IF ls_instance-obj->get( <cp>-key ) IS INITIAL.
+                ls_instance-obj->set( iv_key = <cp>-key ir_val = <cp>-val ).
+              ENDIF.
             ENDIF.
           ENDLOOP.
           rs_val = ls_instance.
+        ELSEIF ls_cls-type = 4 AND ls_cls-fn IS BOUND.
+          DATA ls_p_inst TYPE zif_mjs=>ty_value.
+          ls_p_inst = object_val( ).
+          DATA lt_p_args TYPE zif_mjs=>tt_value_slots.
+          LOOP AT <n>-args INTO DATA(lr_pa).
+            APPEND eval_node( ir_node = lr_pa io_env = io_env ) TO lt_p_args.
+          ENDLOOP.
+          DATA lr_p_inst_ref TYPE REF TO data.
+          lr_p_inst_ref = box_value( ls_p_inst ).
+          DATA(ls_p_ret) = call_function( ir_fn = ls_cls-fn it_args = lt_p_args io_env = io_env
+                                          ir_this = lr_p_inst_ref ).
+          IF ls_p_ret-type = 6 AND ls_p_ret-obj IS BOUND.
+            rs_val = ls_p_ret.
+          ELSE.
+            rs_val = unbox_value( lr_p_inst_ref ).
+          ENDIF.
         ENDIF.
 
       WHEN zif_mjs=>c_node_class.
@@ -1341,9 +1377,19 @@ CLASS zcl_mjs IMPLEMENTATION.
         ls_clsobj = object_val( ).
         IF <n>-op IS NOT INITIAL.
           DATA(ls_super_cls) = io_env->get( <n>-op ).
+          " also check if its a class expression via its node kind if we want to be more robust
+          " but for now let's see if this works
           IF ls_super_cls-type = 6 AND ls_super_cls-obj IS BOUND.
+            " copy methods from parent
             LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
               ls_clsobj-obj->set( iv_key = <sp>-key ir_val = <sp>-val ).
+            ENDLOOP.
+          ENDIF.
+        ELSEIF <n>-left IS BOUND.
+          DATA(ls_super_expr) = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF ls_super_expr-type = 6 AND ls_super_expr-obj IS BOUND.
+            LOOP AT ls_super_expr-obj->props ASSIGNING FIELD-SYMBOL(<sep>).
+              ls_clsobj-obj->set( iv_key = <sep>-key ir_val = <sep>-val ).
             ENDLOOP.
           ENDIF.
         ENDIF.
@@ -1572,7 +1618,13 @@ CLASS zcl_mjs IMPLEMENTATION.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
       WHEN OTHERS.
-        RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
+        CASE is_obj-type.
+          WHEN 2 OR 3 OR 4 OR 5 OR 7.
+            " primitives, they don't have methods or throw, for now just throw
+            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
+          WHEN OTHERS.
+            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
+        ENDCASE.
     ENDCASE.
   ENDMETHOD.
 

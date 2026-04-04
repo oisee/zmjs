@@ -342,13 +342,21 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   METHOD parse_class.
     next( ).
     DATA lv_name TYPE string.
-    IF peek( )-val <> `{`.
+    IF peek( )-val <> `extends` AND peek( )-val <> `{`.
       lv_name = next( )-val.
     ENDIF.
     DATA lv_super TYPE string.
+    DATA lr_super_expr TYPE REF TO data.
     IF peek( )-val = `extends`.
       next( ).
-      lv_super = next( )-val.
+      lr_super_expr = parse_primary( ).
+      IF lr_super_expr IS BOUND.
+        FIELD-SYMBOLS <se_node> TYPE zif_mjs=>ty_node.
+        ASSIGN lr_super_expr->* TO <se_node>.
+        IF <se_node>-kind = zif_mjs=>c_node_ident.
+          lv_super = <se_node>-str.
+        ENDIF.
+      ENDIF.
     ENDIF.
     expect( `{` ).
     DATA lt_methods TYPE zif_mjs=>tt_class_methods.
@@ -378,6 +386,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     lr_n->kind    = zif_mjs=>c_node_class.
     lr_n->str     = lv_name.
     lr_n->op      = lv_super.
+    lr_n->left    = lr_super_expr.
     lr_n->methods = lt_methods.
     rr_node = lr_n.
   ENDMETHOD.
@@ -606,23 +615,32 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     ENDIF.
     IF peek( )-val = `new`.
       next( ).
-      DATA(lv_name) = next( )-val.
-      expect( `(` ).
-      DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-      WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-        APPEND parse_expr( ) TO lt_args.
-        IF peek( )-val = `,`.
-          next( ).
-        ENDIF.
-      ENDWHILE.
-      expect( `)` ).
-      DATA lr_new TYPE REF TO zif_mjs=>ty_node.
-      CREATE DATA lr_new.
-      lr_new->kind = zif_mjs=>c_node_new.
-      lr_new->str  = lv_name.
-      lr_new->args = lt_args.
-      rr_node = lr_new.
-      RETURN.
+      DATA(lr_c_expr) = parse_primary( ).
+      DATA(lv_c_name) = ``.
+      FIELD-SYMBOLS <c_node> TYPE zif_mjs=>ty_node.
+      ASSIGN lr_c_expr->* TO <c_node>.
+      IF <c_node>-kind = zif_mjs=>c_node_ident.
+        lv_c_name = <c_node>-str.
+      ENDIF.
+      IF peek( )-val = `(`.
+        next( ).
+        DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+        WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+          APPEND parse_expr( ) TO lt_args.
+          IF peek( )-val = `,`.
+            next( ).
+          ENDIF.
+        ENDWHILE.
+        expect( `)` ).
+        DATA lr_new TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_new.
+        lr_new->kind = zif_mjs=>c_node_new.
+        lr_new->str  = lv_c_name.
+        lr_new->left = lr_c_expr.
+        lr_new->args = lt_args.
+        rr_node = lr_new.
+        RETURN.
+      ENDIF.
     ENDIF.
     rr_node = parse_postfix( ).
   ENDMETHOD.

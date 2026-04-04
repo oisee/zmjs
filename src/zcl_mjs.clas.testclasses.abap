@@ -27,6 +27,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_substring_one_arg FOR TESTING.
     METHODS test_extends FOR TESTING.
     METHODS test_class_expression FOR TESTING.
+    METHODS test_class_expr_extends FOR TESTING.
 
     METHODS test262 FOR TESTING.
 
@@ -262,6 +263,26 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |Rex barks.| ).
+  ENDMETHOD.
+
+  METHOD test_class_expr_extends.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var AbstractFile = class {` && lv_nl &&
+      `  constructor(filename) { this.filename = filename; }` && lv_nl &&
+      `  getFilename() { return this.filename; }` && lv_nl &&
+      `};` && lv_nl &&
+      `var MemoryFile = class extends AbstractFile {` && lv_nl &&
+      `  constructor(filename, raw) {` && lv_nl &&
+      `    this.raw = raw;` && lv_nl &&
+      `  }` && lv_nl &&
+      `  getRaw() { return this.raw; }` && lv_nl &&
+      `};` && lv_nl &&
+      `var f = new MemoryFile("test.abap", "WRITE");` && lv_nl &&
+      `console.log(f.getRaw().substring(0, 3));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |WRI| ).
   ENDMETHOD.
 
   METHOD test_class_expression.
