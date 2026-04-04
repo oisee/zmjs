@@ -158,12 +158,13 @@ type ClassMethod struct {
 
 // Function represents a JS function.
 type Function struct {
-	Name     string
-	Params   []string
-	Body     []*Node
-	Closure  *Env           // captured environment for closures
-	Slots    map[string]int // variable slot map (nil until lazy-compiled)
-	MaxSlots int            // number of slots needed
+	Name           string
+	Params         []string
+	Body           []*Node
+	Closure        *Env           // captured environment for closures
+	Slots          map[string]int // variable slot map (nil until lazy-compiled)
+	MaxSlots       int            // number of slots needed
+	NeedsArguments bool           // true if body references "arguments"
 }
 
 // Env is a variable environment (scope).
@@ -262,6 +263,7 @@ func compileFunction(fn *Function) {
 	for _, s := range fn.Body { collectSlots(s, slotMap, &next) }
 	fn.Slots = slotMap
 	fn.MaxSlots = next
+	fn.NeedsArguments = scanForIdent(fn.Body, "arguments")
 	for _, s := range fn.Body { annotateSlots(s, slotMap) }
 }
 
@@ -293,6 +295,32 @@ func collectSlots(n *Node, sm map[string]int, next *int) {
 
 // annotateSlots sets Slot/SlotOK on identifier/var/assign nodes for local variables.
 // Does NOT descend into nested function bodies.
+// scanForIdent checks whether an identifier name appears anywhere in a node tree.
+// Does NOT descend into nested function bodies.
+func scanForIdent(nodes []*Node, name string) bool {
+	for _, n := range nodes {
+		if scanNode(n, name) { return true }
+	}
+	return false
+}
+
+func scanNode(n *Node, name string) bool {
+	if n == nil { return false }
+	if n.Kind == NodeIdent && n.Str == name { return true }
+	if n.Kind == NodeFuncDecl || n.Kind == NodeFuncExpr { return false }
+	if scanNode(n.Left, name) || scanNode(n.Right, name) { return true }
+	if scanNode(n.Cond, name) || scanNode(n.Init, name) { return true }
+	if scanNode(n.Update, name) || scanNode(n.Object, name) { return true }
+	if n.PropExpr != nil && scanNode(n.PropExpr, name) { return true }
+	for _, c := range n.Body    { if scanNode(c, name) { return true } }
+	for _, c := range n.Else    { if scanNode(c, name) { return true } }
+	for _, c := range n.Args    { if scanNode(c, name) { return true } }
+	for _, c := range n.Catch   { if scanNode(c, name) { return true } }
+	for _, c := range n.Finally { if scanNode(c, name) { return true } }
+	for _, sc := range n.Cases  { for _, s := range sc.Body { if scanNode(s, name) { return true } } }
+	return false
+}
+
 func annotateSlots(n *Node, sm map[string]int) {
 	if n == nil { return }
 	switch n.Kind {
@@ -351,8 +379,8 @@ func callFunction(fn *Function, args []Value, env *Env, thisVal *Value) Value {
 			callEnv.Define(param, Undefined)
 		}
 	}
-	// Bind `arguments` pseudo-array (unless a formal param shadows it)
-	if !hasArgumentsParam {
+	// Bind `arguments` pseudo-array only if body actually references it
+	if !hasArgumentsParam && fn.NeedsArguments {
 		argsCopy := make([]Value, len(args))
 		copy(argsCopy, args)
 		callEnv.Define("arguments", ArrayVal(argsCopy))
