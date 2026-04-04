@@ -124,13 +124,13 @@ __test("expressions/addition/S11.6.1_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) + x !== 2) {
   throw new Test262Error('#1: var x = 0; (x = 1) + x === 2. Actual: ' + ((x = 1) + x));
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x + (x = 1) !== 1) {
   throw new Test262Error('#2: var x = 0; x + (x = 1) === 1. Actual: ' + (x + (x = 1)));
 }
@@ -205,13 +205,13 @@ __test("expressions/subtraction/S11.6.2_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) - x !== 0) {
   throw new Test262Error('#1: var x = 0; (x = 1) - x === 0. Actual: ' + ((x = 1) - x));
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x - (x = 1) !== -1) {
   throw new Test262Error('#2: var x = 0; x - (x = 1) === -1. Actual: ' + (x - (x = 1)));
 }
@@ -286,13 +286,13 @@ __test("expressions/multiplication/S11.5.1_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) * x !== 1) {
   throw new Test262Error('#1: var x = 0; (x = 1) * x === 1. Actual: ' + ((x = 1) * x));
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x * (x = 1) !== 0) {
   throw new Test262Error('#2: var x = 0; x * (x = 1) === 0. Actual: ' + (x * (x = 1)));
 }
@@ -388,13 +388,13 @@ __test("expressions/division/S11.5.2_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) / x !== 1) {
   throw new Test262Error('#1: var x = 0; (x = 1) / x === 1. Actual: ' + ((x = 1) / x));
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x / (x = 1) !== 0) {
   throw new Test262Error('#2: var x = 0; x / (x = 1) === 0. Actual: ' + (x / (x = 1)));
 }
@@ -506,13 +506,13 @@ __test("expressions/modulus/S11.5.3_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) % x !== 0) {
   throw new Test262Error('#1: var x = 0; (x = 1) % x === 0. Actual: ' + ((x = 1) % x));
 }
 
 //CHECK#2
-var x = 1; 
+var x = 1;
 if (x % (x = 2) !== 1) {
   throw new Test262Error('#2: var x = 1; x % (x = 2) === 1. Actual: ' + (x % (x = 2)));
 }
@@ -584,13 +584,13 @@ __test("expressions/logical-and/S11.11.1_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = false; 
+var x = false;
 if (((x = true) && x) !== true) {
   throw new Test262Error('#1: var x = false; ((x = true) && x) === true');
 }
 
 //CHECK#2
-var x = false; 
+var x = false;
 if ((x && (x = true)) !== false) {
   throw new Test262Error('#2: var x = false; (x && (x = true)) === false');
 }
@@ -628,13 +628,13 @@ __test("expressions/logical-or/S11.11.2_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = true; 
+var x = true;
 if (((x = false) || x) !== false) {
   throw new Test262Error('#1: var x = true; ((x = false) || x) === false');
 }
 
 //CHECK#2
-var x = true; 
+var x = true;
 if ((x || (x = false)) !== true) {
   throw new Test262Error('#2: var x = true; (x || (x = false)) === true');
 }
@@ -685,13 +685,13 @@ __test("expressions/strict-equals/S11.9.4_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if (!((x = 1) === x)) {
   throw new Test262Error('#1: var x = 0; (x = 1) === x');
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x === (x = 1)) {
   throw new Test262Error('#2: var x = 0; x !== (x = 1)');
 }
@@ -742,13 +742,13 @@ __test("expressions/strict-does-not-equals/S11.9.5_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) !== x) {
   throw new Test262Error('#1: var x = 0; (x = 1) === x');
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (!(x !== (x = 1))) {
   throw new Test262Error('#2: var x = 0; x !== (x = 1)');
 }
@@ -799,13 +799,13 @@ __test("expressions/does-not-equals/S11.9.2_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if (((x = 1) != x) !== false) {
   throw new Test262Error('#1: var x = 0; ((x = 1) != x) === false');
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if ((x != (x = 1)) !== true) {
   throw new Test262Error('#2: var x = 0; (x != (x = 1)) === true');
 }
@@ -880,13 +880,13 @@ __test("expressions/less-than/S11.8.1_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 1; 
+var x = 1;
 if ((x = 0) < x !== false) {
   throw new Test262Error('#1: var x = 1; (x = 0) < x === false');
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x < (x = 1) !== true) {
   throw new Test262Error('#2: var x = 0; x < (x = 1) === true');
 }
@@ -937,13 +937,13 @@ __test("expressions/greater-than/S11.8.2_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) > x !== false) {
   throw new Test262Error('#1: var x = 0; (x = 1) > x === false');
 }
 
 //CHECK#2
-var x = 1; 
+var x = 1;
 if (x > (x = 0) !== true) {
   throw new Test262Error('#2: var x = 1; x > (x = 0) === true');
 }
@@ -994,13 +994,13 @@ __test("expressions/less-than-or-equal/S11.8.3_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 0; 
+var x = 0;
 if ((x = 1) <= x !== true) {
   throw new Test262Error('#1: var x = 0; (x = 1) <= x === true');
 }
 
 //CHECK#2
-var x = 1; 
+var x = 1;
 if (x <= (x = 0) !== false) {
   throw new Test262Error('#2: var x = 1; x <= (x = 0) === false');
 }
@@ -1075,13 +1075,13 @@ __test("expressions/greater-than-or-equal/S11.8.4_A2.4_T1.js", function() {
 
 
 //CHECK#1
-var x = 1; 
+var x = 1;
 if ((x = 0) >= x !== true) {
   throw new Test262Error('#1: var x = 1; (x = 0) >= x === true');
 }
 
 //CHECK#2
-var x = 0; 
+var x = 0;
 if (x >= (x = 1) !== false) {
   throw new Test262Error('#2: var x = 0; x >= (x = 1) === false');
 }
@@ -1657,7 +1657,7 @@ __test("statements/while/S12.6.2_A4_T1.js", function() {
 var __in__do__before__break, __in__do__after__break;
 
 while(1===1){
-    __in__do__before__break="reached"; 
+    __in__do__before__break="reached";
     break;
      __in__do__after__break="where am i";
 }
@@ -1691,7 +1691,7 @@ do_out : while(1===1) {
     var __in__do__before__break="black";
     do_in : while (1) {
         var __in__do__IN__before__break="hole";
-        break do_in; 
+        break do_in;
         var __in__do__IN__after__break="sun";
     } ;
     var __in__do__after__break="won't you come";
@@ -2041,7 +2041,7 @@ __test("statements/try/S12.14_A2.js", function() {
 
 // CHECK#1
 try {
-  throw "catchme";	
+  throw "catchme";
   throw new Test262Error('#1: throw "catchme" lead to throwing exception');
 }
 catch(e){}
@@ -2061,14 +2061,14 @@ catch(e){
     throw new Test262Error('#2.2: "finally" block must be evaluated');
   }
 }
- 
+
 // CHECK#3
 var c3=0;
 try{
   throw "exc";
   throw new Test262Error('#3.1: throw "exc" lead to throwing exception');
 }
-catch(err){  	
+catch(err){
   var x3=1;
 }
 finally{
@@ -2076,7 +2076,7 @@ finally{
 }
 if (x3!==1){
   throw new Test262Error('#3.2: "catch" block must be evaluated');
-}  
+}
 if (c3!==1){
   throw new Test262Error('#3.3: "finally" block must be evaluated');
 }
@@ -2824,7 +2824,7 @@ __test("statements/function/S13.2.1_A9_T1.js", function() {
 
 
 
-var x; 
+var x;
 
 function __func(){
     x = 1;
@@ -2855,7 +2855,7 @@ __test("statements/function/S13.2.1_A9_T2.js", function() {
 
 
 
-var x; 
+var x;
 
 var __func = function(){
     x = 1;
@@ -2888,13 +2888,13 @@ __test("statements/function/S13.2.2_A12.js", function() {
 
 function FACTORY(){
    this.id = 0;
-      
+
    this.id = func();
-   
+
    function func(){
       return "id_string";
    }
-     
+
 }
 //////////////////////////////////////////////////////////////////////////////
 //CHECK#1
@@ -3739,7 +3739,7 @@ function __func (arg1, arg2){
 	this.first=arg1;
 	var __obj={second:arg2};
     return __obj;
-	
+
 };
 
 var __obj__ = new __func(__FRST, __SCND);
@@ -3777,7 +3777,7 @@ __func = function(arg1, arg2){
 	this.first=arg1;
 	var __obj={second:arg2};
     return __obj;
-	
+
 };
 
 __obj__ = new __func(__FRST, __SCND);
@@ -3855,7 +3855,7 @@ var arguments = THE_ANSWER;
 
 function __func(arguments){
     return arguments;
-    
+
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4095,7 +4095,7 @@ __test("statements/function/dflt-params-abrupt.js", function() {
 
 var callCount = 0;
 function f(_ = (function() { throw new Test262Error(); }())) {
-  
+
   callCount = callCount + 1;
 }
 assert.throws(Test262Error, function() {
@@ -4135,7 +4135,7 @@ var x = 0;
 
 var callCount = 0;
 function f(x = y, y) {
-  
+
   callCount = callCount + 1;
 }
 assert.throws(ReferenceError, function() {
@@ -4176,7 +4176,7 @@ var x = 0;
 
 var callCount = 0;
 function f(x = x) {
-  
+
   callCount = callCount + 1;
 }
 assert.throws(ReferenceError, function() {
@@ -8474,15 +8474,16 @@ assert.sameValue("\
 ", "");
 
 // LineTerminatorSequence :: <CR> [lookahead ≠ <LF>]
-assert.sameValue("\", "");
+assert.sameValue("\
+", "");
 
 // LineTerminatorSequence :: <LS>
 // <LS> is U+2028 LINE SEPARATOR; UTF8(0x2028) = 0xE2 0x80 0xA8
-assert.sameValue("\ ", "");
+assert.sameValue("\", "");
 
 // LineTerminatorSequence :: <PS>
 // <PS> is U+2029 PARAGRAPH SEPARATOR; UTF8(0x2029) = 0xE2 0x80 0xA9
-assert.sameValue("\ ", "");
+assert.sameValue("\", "");
 
 // LineTerminatorSequence :: <CR> <LF>
 assert.sameValue("\
@@ -8501,15 +8502,16 @@ assert.sameValue('\
 ', '');
 
 // LineTerminatorSequence :: <CR> [lookahead ≠ <LF>]
-assert.sameValue('\', '');
+assert.sameValue('\
+', '');
 
 // LineTerminatorSequence :: <LS>
 // <LS> is U+2028 LINE SEPARATOR; UTF8(0x2028) = 0xE2 0x80 0xA8
-assert.sameValue('\ ', '');
+assert.sameValue('\', '');
 
 // LineTerminatorSequence :: <PS>
 // <PS> is U+2029 PARAGRAPH SEPARATOR; UTF8(0x2029) = 0xE2 0x80 0xA9
-assert.sameValue('\ ', '');
+assert.sameValue('\', '');
 
 // LineTerminatorSequence :: <CR> <LF>
 assert.sameValue('\
@@ -8524,7 +8526,7 @@ __test("literals/string/line-separator.js", function() {
 
 
 // U+2028 in strings; UTF8(0x2028) = 0xE2 0x80 0xA8
-assert.sameValue(" ", "\u2028");
+assert.sameValue("", "\u2028");
 
 });
 
@@ -8546,7 +8548,7 @@ __test("literals/string/paragraph-separator.js", function() {
 
 
 // U+2029 in strings; UTF8(0x2029) = 0xE2 0x80 0xA9
-assert.sameValue(" ", "\u2029");
+assert.sameValue("", "\u2029");
 
 });
 

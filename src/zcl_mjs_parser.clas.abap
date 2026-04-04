@@ -671,6 +671,50 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_ba->object    = lr_left.
         lr_ba->prop_expr = lr_idx.
         lr_left = lr_ba.
+      ELSEIF peek( )-val = `?.`.
+        next( ).
+        IF peek( )-val = `[`.
+          next( ).
+          DATA(lr_oidx) = parse_expr( ).
+          expect( `]` ).
+          DATA lr_oba TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_oba.
+          lr_oba->kind      = zif_mjs=>c_node_member_access.
+          lr_oba->op        = `?.`.
+          lr_oba->object    = lr_left.
+          lr_oba->prop_expr = lr_oidx.
+          lr_left = lr_oba.
+        ELSE.
+          DATA(lv_oprop) = next( )-val.
+          IF peek( )-val = `(`.
+            next( ).
+            DATA lt_omargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            CLEAR lt_omargs.
+            WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+              APPEND parse_expr( ) TO lt_omargs.
+              IF peek( )-val = `,`.
+                next( ).
+              ENDIF.
+            ENDWHILE.
+            expect( `)` ).
+            DATA lr_omc TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_omc.
+            lr_omc->kind     = zif_mjs=>c_node_method_call.
+            lr_omc->op       = `?.`.
+            lr_omc->object   = lr_left.
+            lr_omc->property = lv_oprop.
+            lr_omc->args     = lt_omargs.
+            lr_left = lr_omc.
+          ELSE.
+            DATA lr_oma TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_oma.
+            lr_oma->kind     = zif_mjs=>c_node_member_access.
+            lr_oma->op       = `?.`.
+            lr_oma->object   = lr_left.
+            lr_oma->property = lv_oprop.
+            lr_left = lr_oma.
+          ENDIF.
+        ENDIF.
       ELSEIF peek( )-val = `(` AND lr_left IS BOUND.
         FIELD-SYMBOLS <ln> TYPE zif_mjs=>ty_node.
         ASSIGN lr_left->* TO <ln>.

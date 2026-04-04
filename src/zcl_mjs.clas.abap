@@ -378,6 +378,14 @@ CLASS zcl_mjs IMPLEMENTATION.
       IF lv_i + 1 < lv_len.
         DATA lv_two TYPE string.
         lv_two = iv_src+lv_i(2).
+        IF lv_two = `?.` OR lv_two = `??`.
+          CLEAR ls_tok.
+          ls_tok-kind = 3.
+          ls_tok-val  = lv_two.
+          APPEND ls_tok TO rt_tokens.
+          lv_i = lv_i + 2.
+          CONTINUE.
+        ENDIF.
         IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
            OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`.
           IF lv_i + 2 < lv_len AND
@@ -1134,6 +1142,10 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_method_call.
         DATA(ls_mcobj) = eval_node( ir_node = <n>-object io_env = io_env ).
+        IF <n>-op = `?.` AND ( ls_mcobj-type = 0 OR ls_mcobj-type = 5 ).
+          rs_val = undefined_val( ).
+          RETURN.
+        ENDIF.
         DATA lv_method TYPE string.
         lv_method = <n>-property.
         DATA lt_mc_args TYPE zif_mjs=>tt_value_slots.
@@ -1267,12 +1279,16 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_member_access.
         DATA(ls_paobj) = eval_node( ir_node = <n>-object io_env = io_env ).
-        DATA lv_paprop TYPE string.
-        lv_paprop = <n>-property.
-        IF <n>-prop_expr IS BOUND.
-          lv_paprop = to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
+        IF <n>-op = `?.` AND ( ls_paobj-type = 0 OR ls_paobj-type = 5 ).
+          rs_val = undefined_val( ).
+        ELSE.
+          DATA lv_paprop TYPE string.
+          lv_paprop = <n>-property.
+          IF <n>-prop_expr IS BOUND.
+            lv_paprop = to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
+          ENDIF.
+          rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop ).
         ENDIF.
-        rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop ).
 
       WHEN zif_mjs=>c_node_typeof.
         DATA(ls_toval) = eval_node( ir_node = <n>-left io_env = io_env ).
