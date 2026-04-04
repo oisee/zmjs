@@ -490,6 +490,33 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDIF.
+    " Arrow function: ident => ...
+    IF lr_left IS BOUND.
+      FIELD-SYMBOLS <arrow_left> TYPE zif_mjs=>ty_node.
+      ASSIGN lr_left->* TO <arrow_left>.
+      IF <arrow_left>-kind = zif_mjs=>c_node_ident AND peek( )-val = `=>`.
+        next( ).
+        DATA lt_arrow_body TYPE zif_mjs=>tt_nodes.
+        IF peek( )-val = `{`.
+          lt_arrow_body = parse_block( ).
+        ELSE.
+          DATA(lr_arrow_expr) = parse_assign( ).
+          DATA lr_arrow_ret TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_arrow_ret.
+          lr_arrow_ret->kind = zif_mjs=>c_node_return.
+          lr_arrow_ret->left = lr_arrow_expr.
+          APPEND lr_arrow_ret TO lt_arrow_body.
+        ENDIF.
+        DATA lr_arrow TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_arrow.
+        lr_arrow->kind   = zif_mjs=>c_node_func_decl.
+        lr_arrow->str    = ``.
+        lr_arrow->params = VALUE #( ( <arrow_left>-str ) ).
+        lr_arrow->body   = lt_arrow_body.
+        rr_node = lr_arrow.
+        RETURN.
+      ENDIF.
+    ENDIF.
     rr_node = lr_left.
   ENDMETHOD.
 
@@ -793,6 +820,48 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     ENDIF.
 
     IF ls_t-val = `(`.
+      " Try arrow function: (params) => ...
+      DATA(lv_saved_pos) = pos.
+      next( ).
+      DATA lt_arrow_params TYPE string_table.
+      DATA lv_is_arrow TYPE abap_bool VALUE abap_true.
+      WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+        IF peek( )-kind <> 2.
+          lv_is_arrow = abap_false.
+          EXIT.
+        ENDIF.
+        APPEND next( )-val TO lt_arrow_params.
+        IF peek( )-val = `,`.
+          next( ).
+        ENDIF.
+      ENDWHILE.
+      IF lv_is_arrow = abap_true AND peek( )-val = `)`.
+        next( ).
+        IF peek( )-val = `=>`.
+          next( ).
+          DATA lt_ab TYPE zif_mjs=>tt_nodes.
+          IF peek( )-val = `{`.
+            lt_ab = parse_block( ).
+          ELSE.
+            DATA(lr_ae) = parse_assign( ).
+            DATA lr_ar TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_ar.
+            lr_ar->kind = zif_mjs=>c_node_return.
+            lr_ar->left = lr_ae.
+            APPEND lr_ar TO lt_ab.
+          ENDIF.
+          DATA lr_af TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_af.
+          lr_af->kind   = zif_mjs=>c_node_func_decl.
+          lr_af->str    = ``.
+          lr_af->params = lt_arrow_params.
+          lr_af->body   = lt_ab.
+          rr_node = lr_af.
+          RETURN.
+        ENDIF.
+      ENDIF.
+      " Not arrow — restore and parse as grouping
+      pos = lv_saved_pos.
       next( ).
       DATA(lr_expr) = parse_expr( ).
       expect( `)` ).
