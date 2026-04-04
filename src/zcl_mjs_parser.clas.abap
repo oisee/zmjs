@@ -345,6 +345,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     IF peek( )-val <> `{`.
       lv_name = next( )-val.
     ENDIF.
+    DATA lv_super TYPE string.
+    IF peek( )-val = `extends`.
+      next( ).
+      lv_super = next( )-val.
+    ENDIF.
     expect( `{` ).
     DATA lt_methods TYPE zif_mjs=>tt_class_methods.
     WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
@@ -372,6 +377,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     CREATE DATA lr_n.
     lr_n->kind    = zif_mjs=>c_node_class.
     lr_n->str     = lv_name.
+    lr_n->op      = lv_super.
     lr_n->methods = lt_methods.
     rr_node = lr_n.
   ENDMETHOD.

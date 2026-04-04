@@ -1323,6 +1323,14 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_class.
         DATA ls_clsobj TYPE zif_mjs=>ty_value.
         ls_clsobj = object_val( ).
+        IF <n>-op IS NOT INITIAL.
+          DATA(ls_super_cls) = io_env->get( <n>-op ).
+          IF ls_super_cls-type = 6 AND ls_super_cls-obj IS BOUND.
+            LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
+              ls_clsobj-obj->set( iv_key = <sp>-key ir_val = <sp>-val ).
+            ENDLOOP.
+          ENDIF.
+        ENDIF.
         LOOP AT <n>-methods INTO DATA(ls_cm).
           DATA lr_mfn TYPE REF TO data.
           CREATE DATA lr_mfn TYPE zif_mjs=>ty_function.
