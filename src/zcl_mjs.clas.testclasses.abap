@@ -23,6 +23,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_obj_shorthand FOR TESTING.
     METHODS test_template_literal FOR TESTING.
     METHODS test_optional_chain FOR TESTING.
+    METHODS test_optional_chain_arr FOR TESTING.
     METHODS test_substring_one_arg FOR TESTING.
     METHODS test_extends FOR TESTING.
     METHODS test_class_expression FOR TESTING.
@@ -282,6 +283,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |world| ).
+  ENDMETHOD.
+
+  METHOD test_optional_chain_arr.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const arr = ["hello"];` && lv_nl &&
+      `const x = arr[1]?.toUpperCase();` && lv_nl &&
+      `console.log(x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |undefined| ).
   ENDMETHOD.
 
   METHOD test_optional_chain.

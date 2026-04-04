@@ -8474,7 +8474,8 @@ assert.sameValue("\
 ", "");
 
 // LineTerminatorSequence :: <CR> [lookahead ≠ <LF>]
-assert.sameValue("\", "");
+assert.sameValue("\
+", "");
 
 // LineTerminatorSequence :: <LS>
 // <LS> is U+2028 LINE SEPARATOR; UTF8(0x2028) = 0xE2 0x80 0xA8
@@ -8501,7 +8502,8 @@ assert.sameValue('\
 ', '');
 
 // LineTerminatorSequence :: <CR> [lookahead ≠ <LF>]
-assert.sameValue('\', '');
+assert.sameValue('\
+', '');
 
 // LineTerminatorSequence :: <LS>
 // <LS> is U+2028 LINE SEPARATOR; UTF8(0x2028) = 0xE2 0x80 0xA8
