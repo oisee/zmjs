@@ -2,34 +2,34 @@ CLASS ltcl_test DEFINITION FOR TESTING
   DURATION MEDIUM
   RISK LEVEL HARMLESS.
   PRIVATE SECTION.
-    METHODS test_2plus2 FOR TESTING.
-    METHODS test_string FOR TESTING.
-    METHODS test_if_else FOR TESTING.
-    METHODS test_function FOR TESTING.
-    METHODS test_factorial FOR TESTING.
-    METHODS test_closure FOR TESTING.
-    METHODS test_object FOR TESTING.
-    METHODS test_array FOR TESTING.
-    METHODS test_class FOR TESTING.
-    METHODS test_for_loop FOR TESTING.
-    METHODS test_while_continue FOR TESTING.
-    METHODS test_switch FOR TESTING.
-    METHODS test_typeof FOR TESTING.
-    METHODS test_string_methods FOR TESTING.
-    METHODS test_or_chain FOR TESTING.
-    METHODS test_space_handling FOR TESTING.
-    METHODS test_string_method_call FOR TESTING.
-    METHODS test_anonymous_class FOR TESTING.
-    METHODS test_obj_shorthand FOR TESTING.
-    METHODS test_template_literal FOR TESTING.
-    METHODS test_optional_chain FOR TESTING.
-    METHODS test_optional_chain_arr FOR TESTING.
-    METHODS test_substring_one_arg FOR TESTING.
-    METHODS test_extends FOR TESTING.
-    METHODS test_class_expression FOR TESTING.
-    METHODS test_class_expr_extends FOR TESTING.
+    METHODS test_2plus2 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_if_else FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_factorial FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_closure FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_object FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_array FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_class FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_for_loop FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_while_continue FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_switch FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_typeof FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_methods FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_or_chain FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_space_handling FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_method_call FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_anonymous_class FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_obj_shorthand FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_template_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_optional_chain FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_optional_chain_arr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_substring_one_arg FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_extends FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_class_expression FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_class_expr_extends FOR TESTING RAISING zcx_mjs_runtime.
 
-    METHODS test262 FOR TESTING.
+    METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS trim
       IMPORTING iv TYPE string

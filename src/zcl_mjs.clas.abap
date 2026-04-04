@@ -40,7 +40,8 @@ CLASS zcl_mjs DEFINITION PUBLIC.
     CLASS-METHODS eval_node
       IMPORTING ir_node       TYPE REF TO data
                 io_env        TYPE REF TO zcl_mjs_env
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_bin_op
       IMPORTING iv_op         TYPE string
                 is_left       TYPE zif_mjs=>ty_value
@@ -56,13 +57,15 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
                 ir_obj_node   TYPE REF TO data
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS call_function
       IMPORTING ir_fn         TYPE REF TO data
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
                 ir_this       TYPE REF TO data OPTIONAL
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS compile_function
       IMPORTING ir_fn         TYPE REF TO data.
     CLASS-METHODS collect_slots
