@@ -104,6 +104,13 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lo_env TYPE REF TO zcl_mjs_env.
     CREATE OBJECT lo_env.
     lo_env->define( iv_name = `console` is_val = number_val( 0 ) ).
+    lo_env->define( iv_name = `undefined` is_val = undefined_val( ) ).
+    DATA ls_nan TYPE zif_mjs=>ty_value.
+    ls_nan-type = 1. ls_nan-str = `NaN`.
+    lo_env->define( iv_name = `NaN` is_val = ls_nan ).
+    DATA ls_inf TYPE zif_mjs=>ty_value.
+    ls_inf-type = 1. ls_inf-str = `Infinity`.
+    lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
 
     LOOP AT lt_stmts INTO DATA(lr_stmt).
       eval_node( ir_node = lr_stmt io_env = lo_env ).
@@ -552,15 +559,19 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN 0.
         rv_str = `undefined`.
       WHEN 1.
-        DATA lv_int TYPE i.
-        DATA lv_fcheck TYPE f.
-        lv_int = is_val-num.
-        lv_fcheck = lv_int.
-        IF lv_fcheck = is_val-num.
-          rv_str = |{ lv_int }|.
+        IF is_val-str = `NaN` OR is_val-str = `Infinity` OR is_val-str = `-Infinity`.
+          rv_str = is_val-str.
         ELSE.
-          rv_str = |{ is_val-num }|.
-          CONDENSE rv_str.
+          DATA lv_int TYPE i.
+          DATA lv_fcheck TYPE f.
+          lv_int = is_val-num.
+          lv_fcheck = lv_int.
+          IF lv_fcheck = is_val-num.
+            rv_str = |{ lv_int }|.
+          ELSE.
+            rv_str = |{ is_val-num }|.
+            CONDENSE rv_str.
+          ENDIF.
         ENDIF.
       WHEN 2.
         rv_str = is_val-str.
@@ -1635,7 +1646,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       RETURN.
     ENDIF.
     CASE iv_op.
-      WHEN `==` OR `===`.
+      WHEN `===`.
         rs_val-type = 3.
         IF is_left-type <> is_right-type. RETURN. ENDIF.
         IF is_left-type = 2.
@@ -1644,7 +1655,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF to_number( is_left ) = to_number( is_right ). rs_val-num = 1. ENDIF.
         ENDIF.
         RETURN.
-      WHEN `!=` OR `!==`.
+      WHEN `!==`.
         rs_val-type = 3.
         IF is_left-type <> is_right-type. rs_val-num = 1. RETURN. ENDIF.
         IF is_left-type = 2.
@@ -1652,6 +1663,41 @@ CLASS zcl_mjs IMPLEMENTATION.
         ELSE.
           IF to_number( is_left ) <> to_number( is_right ). rs_val-num = 1. ENDIF.
         ENDIF.
+        RETURN.
+      WHEN `==`.
+        rs_val-type = 3.
+        IF is_left-type = is_right-type.
+          IF is_left-type = 2.
+            IF is_left-str = is_right-str. rs_val-num = 1. ENDIF.
+          ELSE.
+            IF to_number( is_left ) = to_number( is_right ). rs_val-num = 1. ENDIF.
+          ENDIF.
+          RETURN.
+        ENDIF.
+        " null == undefined (and vice versa)
+        IF ( is_left-type = 0 OR is_left-type = 5 ) AND ( is_right-type = 0 OR is_right-type = 5 ).
+          rs_val-num = 1. RETURN.
+        ENDIF.
+        " number/string coercion
+        IF is_left-type = 1 AND is_right-type = 2.
+          IF is_left-num = to_number( is_right ). rs_val-num = 1. ENDIF. RETURN.
+        ENDIF.
+        IF is_left-type = 2 AND is_right-type = 1.
+          IF to_number( is_left ) = is_right-num. rs_val-num = 1. ENDIF. RETURN.
+        ENDIF.
+        " bool coercion — convert bool side to number and retry
+        IF is_left-type = 3.
+          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right ).
+          RETURN.
+        ENDIF.
+        IF is_right-type = 3.
+          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) ).
+          RETURN.
+        ENDIF.
+        RETURN.
+      WHEN `!=`.
+        rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right ).
+        IF rs_val-num = 1. rs_val-num = 0. ELSE. rs_val-num = 1. ENDIF.
         RETURN.
     ENDCASE.
     DATA lv_a TYPE f.
@@ -1667,7 +1713,15 @@ CLASS zcl_mjs IMPLEMENTATION.
         rs_val-type = 1. rs_val-num = lv_a * lv_b.
       WHEN `/`.
         rs_val-type = 1.
-        IF lv_b <> 0. rs_val-num = lv_a / lv_b. ENDIF.
+        IF lv_b <> 0.
+          rs_val-num = lv_a / lv_b.
+        ELSEIF lv_a = 0.
+          rs_val-str = `NaN`.
+        ELSEIF lv_a > 0.
+          rs_val-str = `Infinity`.
+        ELSE.
+          rs_val-str = `-Infinity`.
+        ENDIF.
       WHEN `%`.
         rs_val-type = 1.
         IF lv_b <> 0.
@@ -1676,6 +1730,8 @@ CLASS zcl_mjs IMPLEMENTATION.
           lv_ia = lv_a.
           lv_ib = lv_b.
           rs_val-num = CONV f( lv_ia MOD lv_ib ).
+        ELSE.
+          rs_val-str = `NaN`.
         ENDIF.
       WHEN `<`.
         rs_val-type = 3. IF lv_a < lv_b.  rs_val-num = 1. ENDIF.
