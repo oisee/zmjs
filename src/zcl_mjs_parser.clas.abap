@@ -89,6 +89,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD expect.
+* todo: throw error if not match?
     next( ).
   ENDMETHOD.
 
@@ -837,14 +838,22 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA lt_pairs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
     WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
       DATA(lv_key) = next( )-val.
-      expect( `:` ).
-      DATA(lr_val) = parse_expr( ).
       DATA lr_k TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_k.
       lr_k->kind = zif_mjs=>c_node_string.
       lr_k->str  = lv_key.
       APPEND lr_k TO lt_pairs.
-      APPEND lr_val TO lt_pairs.
+      IF peek( )-val = `:`.
+        next( ).
+        DATA(lr_val) = parse_expr( ).
+        APPEND lr_val TO lt_pairs.
+      ELSE.
+        DATA lr_sh TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_sh.
+        lr_sh->kind = zif_mjs=>c_node_ident.
+        lr_sh->str  = lv_key.
+        APPEND lr_sh TO lt_pairs.
+      ENDIF.
       IF peek( )-val = `,`.
         next( ).
       ENDIF.
