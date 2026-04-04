@@ -1484,15 +1484,19 @@ CLASS zcl_mjs IMPLEMENTATION.
               rs_val = number_val( -1 ).
             ENDIF.
           WHEN `substring`.
-            IF lines( it_args ) >= 2.
+            IF lines( it_args ) >= 1.
               DATA ls_ss1 TYPE zif_mjs=>ty_value.
               DATA ls_ss2 TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_ss1.
-              READ TABLE it_args INDEX 2 INTO ls_ss2.
               DATA lv_start TYPE i.
               DATA lv_end   TYPE i.
               lv_start = to_number( ls_ss1 ).
-              lv_end   = to_number( ls_ss2 ).
+              IF lines( it_args ) >= 2.
+                READ TABLE it_args INDEX 2 INTO ls_ss2.
+                lv_end = to_number( ls_ss2 ).
+              ELSE.
+                lv_end = strlen( is_obj-str ).
+              ENDIF.
               DATA lv_slen TYPE i.
               lv_slen = strlen( is_obj-str ).
               IF lv_start < 0. lv_start = 0. ENDIF.
