@@ -1614,6 +1614,41 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = number_val( 0 ).
             ENDIF.
+          WHEN `replace`.
+            IF lines( it_args ) >= 2.
+              DATA ls_rep1 TYPE zif_mjs=>ty_value.
+              DATA ls_rep2 TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_rep1.
+              READ TABLE it_args INDEX 2 INTO ls_rep2.
+              DATA(lv_rep_from) = to_string( ls_rep1 ).
+              DATA(lv_rep_to)   = to_string( ls_rep2 ).
+              IF strlen( lv_rep_from ) = 0.
+                rs_val = string_val( lv_rep_to && is_obj-str ).
+              ELSE.
+                DATA lv_rep_off TYPE i.
+                DATA lv_rep_mln TYPE i.
+                FIND lv_rep_from IN is_obj-str
+                  RESPECTING CASE
+                  MATCH OFFSET lv_rep_off
+                  MATCH LENGTH lv_rep_mln.
+                IF sy-subrc = 0.
+                  DATA lv_rep_res TYPE string.
+                  IF lv_rep_off > 0.
+                    lv_rep_res = substring( val = is_obj-str len = lv_rep_off ).
+                  ENDIF.
+                  lv_rep_res = lv_rep_res && lv_rep_to.
+                  DATA(lv_rep_tail) = lv_rep_off + lv_rep_mln.
+                  IF lv_rep_tail < strlen( is_obj-str ).
+                    lv_rep_res = lv_rep_res && substring( val = is_obj-str off = lv_rep_tail ).
+                  ENDIF.
+                  rs_val = string_val( lv_rep_res ).
+                ELSE.
+                  rs_val = string_val( is_obj-str ).
+                ENDIF.
+              ENDIF.
+            ELSE.
+              rs_val = string_val( is_obj-str ).
+            ENDIF.
           WHEN OTHERS.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
