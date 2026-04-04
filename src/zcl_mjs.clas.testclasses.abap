@@ -25,6 +25,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_optional_chain FOR TESTING.
     METHODS test_substring_one_arg FOR TESTING.
     METHODS test_extends FOR TESTING.
+    METHODS test_class_expression FOR TESTING.
 
     METHODS test262 FOR TESTING.
 
@@ -260,6 +261,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |Rex barks.| ).
+  ENDMETHOD.
+
+  METHOD test_class_expression.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var Foo = class {` && lv_nl &&
+      `  getValue() { return 42; }` && lv_nl &&
+      `};` && lv_nl &&
+      `var f = new Foo();` && lv_nl &&
+      `console.log(f.getValue());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
   ENDMETHOD.
 
   METHOD test_substring_one_arg.

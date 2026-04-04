@@ -1345,7 +1345,10 @@ CLASS zcl_mjs IMPLEMENTATION.
           ls_mfnval-fn   = lr_mfn.
           ls_clsobj-obj->set( iv_key = ls_cm-name ir_val = box_value( ls_mfnval ) ).
         ENDLOOP.
-        io_env->define( iv_name = <n>-str is_val = ls_clsobj ).
+        IF <n>-str IS NOT INITIAL.
+          io_env->define( iv_name = <n>-str is_val = ls_clsobj ).
+        ENDIF.
+        rs_val = ls_clsobj.
 
       WHEN zif_mjs=>c_node_switch.
         DATA(ls_swval) = eval_node( ir_node = <n>-cond io_env = io_env ).
