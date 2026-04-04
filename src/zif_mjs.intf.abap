@@ -1,7 +1,7 @@
 INTERFACE zif_mjs PUBLIC.
 
   " Value types: 0=undefined, 1=number, 2=string, 3=bool,
-  "              4=function, 5=null, 6=object, 7=array
+  "              4=function, 5=null, 6=object, 7=array, 8=regex
   TYPES:
     BEGIN OF ty_value,
       type TYPE i,
@@ -79,7 +79,8 @@ INTERFACE zif_mjs PUBLIC.
     c_node_continue      TYPE i VALUE 24,
     c_node_bool          TYPE i VALUE 25,
     c_node_try           TYPE i VALUE 26,
-    c_node_throw         TYPE i VALUE 27.
+    c_node_throw         TYPE i VALUE 27,
+    c_node_regex         TYPE i VALUE 28.
 
   " AST Node
   TYPES:

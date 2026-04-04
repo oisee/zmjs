@@ -26,6 +26,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_optional_chain_arr FOR TESTING.
     METHODS test_substring_one_arg FOR TESTING.
     METHODS test_string_replace FOR TESTING.
+    METHODS test_replace_regex FOR TESTING.
     METHODS test_extends FOR TESTING.
     METHODS test_class_expression FOR TESTING.
     METHODS test_class_expr_extends FOR TESTING.
@@ -316,6 +317,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |hello JS aaXbcc hello| ).
+  ENDMETHOD.
+
+  METHOD test_replace_regex.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("hello world".replace(/world/, "JS"));` && lv_nl &&
+      `console.log("aabbcc".replace(/b/g, "X"));` && lv_nl &&
+      `console.log("Hello World".replace(/hello/i, "hi"));` && lv_nl &&
+      `console.log("Hello hello HELLO".replace(/hello/gi, "hi"));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello JS aaXXcc hi World hi hi hi| ).
   ENDMETHOD.
 
   METHOD test_optional_chain_arr.
