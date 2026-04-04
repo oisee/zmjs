@@ -119,7 +119,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_j   TYPE i.
     DATA ls_tok TYPE zif_mjs=>ty_token.
     DATA lv_ni  TYPE i.
+    DATA lv_bt  TYPE c LENGTH 1.
 
+    lv_bt = |`|.
     lv_len = strlen( iv_src ).
 
     WHILE lv_i < lv_len.
@@ -230,8 +232,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-      " String
-      IF lv_ch = `'` OR lv_ch = `"`.
+      " String (single-quote, double-quote, or backtick template literal)
+      IF lv_ch = `'` OR lv_ch = `"` OR lv_ch = lv_bt.
         DATA lv_quote TYPE c LENGTH 1.
         lv_quote = lv_ch.
         lv_j = lv_i + 1.
