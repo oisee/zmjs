@@ -49,6 +49,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_reference_error FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_static_method_computed FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -416,6 +417,25 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2| ).
+  ENDMETHOD.
+
+  METHOD test_static_method_computed.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var C = class {` && lv_nl &&
+      `  static m() {` && lv_nl &&
+      `    var obj = {fn: function() { return 42; }};` && lv_nl &&
+      `    var k = "fn";` && lv_nl &&
+      `    var ret = [];` && lv_nl &&
+      `    ret.push(obj[k]());` && lv_nl &&
+      `    return ret;` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `console.log("should print");` && lv_nl &&
+      `console.log(C.m()[0]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |should print 42| ).
   ENDMETHOD.
 
   METHOD test262.
