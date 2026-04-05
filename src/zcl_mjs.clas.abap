@@ -111,6 +111,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     CREATE OBJECT lo_env.
     lo_env->define( iv_name = `console` is_val = number_val( 0 ) ).
     lo_env->define( iv_name = `undefined` is_val = undefined_val( ) ).
+    DATA ls_null TYPE zif_mjs=>ty_value.
+    ls_null-type = 5.
+    lo_env->define( iv_name = `null` is_val = ls_null ).
     DATA ls_nan TYPE zif_mjs=>ty_value.
     ls_nan-type = 1. ls_nan-str = `NaN`.
     lo_env->define( iv_name = `NaN` is_val = ls_nan ).
