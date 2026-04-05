@@ -641,6 +641,14 @@ CLASS zcl_mjs IMPLEMENTATION.
         ELSE.
           rv_str = `false`.
         ENDIF.
+      WHEN 4.
+        FIELD-SYMBOLS <fn_ts> TYPE zif_mjs=>ty_function.
+        ASSIGN is_val-fn->* TO <fn_ts>.
+        IF sy-subrc = 0 AND <fn_ts>-name IS NOT INITIAL.
+          rv_str = |function { <fn_ts>-name }() \{ [native code] \}|.
+        ELSE.
+          rv_str = `function() { [native code] }`.
+        ENDIF.
       WHEN 5.
         rv_str = `null`.
       WHEN 6.
@@ -1074,6 +1082,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF ls_maobj-type = 6.
           ls_maobj-obj->set( iv_key = lv_maprop ir_val = box_value( ls_maval ) ).
+        ELSEIF ls_maobj-type = 4.
+          IF ls_maobj-obj IS INITIAL.
+            CREATE OBJECT ls_maobj-obj.
+          ENDIF.
+          ls_maobj-obj->set( iv_key = lv_maprop ir_val = box_value( ls_maval ) ).
+          FIELD-SYMBOLS <maon> TYPE zif_mjs=>ty_node.
+          ASSIGN <n>-object->* TO <maon>.
+          IF sy-subrc = 0 AND <maon>-kind = zif_mjs=>c_node_ident.
+            io_env->set( iv_name = <maon>-str is_val = ls_maobj ).
+          ENDIF.
         ENDIF.
         rs_val = ls_maval.
 
@@ -1593,6 +1611,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         ELSE.
           rs_val = undefined_val( ).
         ENDIF.
+      WHEN 4.
+        IF is_obj-obj IS BOUND.
+          DATA lr_fn4_pv TYPE REF TO data.
+          lr_fn4_pv = is_obj-obj->get( iv_prop ).
+          IF lr_fn4_pv IS BOUND.
+            rs_val = unbox_value( lr_fn4_pv ).
+            RETURN.
+          ENDIF.
+        ENDIF.
+        rs_val = undefined_val( ).
       WHEN OTHERS.
         rs_val = undefined_val( ).
     ENDCASE.
@@ -1827,19 +1855,38 @@ CLASS zcl_mjs IMPLEMENTATION.
           WHEN OTHERS.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
-      WHEN OTHERS.
-        CASE is_obj-type.
-          WHEN 2 OR 3 OR 4 OR 5 OR 7.
-            " primitives, they don't have methods or throw, for now just throw
-            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
+      WHEN 4.
+        IF is_obj-obj IS BOUND.
+          DATA lr_fn4_meth TYPE REF TO data.
+          lr_fn4_meth = is_obj-obj->get( iv_method ).
+          IF lr_fn4_meth IS BOUND.
+            DATA(ls_fn4_mval) = unbox_value( lr_fn4_meth ).
+            IF ls_fn4_mval-type = 4 AND ls_fn4_mval-fn IS BOUND.
+              DATA lr_fn4_this TYPE REF TO data.
+              lr_fn4_this = box_value( is_obj ).
+              rs_val = call_function( ir_fn = ls_fn4_mval-fn it_args = it_args io_env = io_env
+                                      ir_this = lr_fn4_this ).
+              RETURN.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+        CASE iv_method.
+          WHEN `toString` OR `valueOf`.
+            rs_val = string_val( to_string( is_obj ) ).
           WHEN OTHERS.
-            RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Cannot call method of { is_obj-type }|.
+            rs_val = undefined_val( ).
         ENDCASE.
+      WHEN OTHERS.
+        " Calling a method on undefined/null/number/bool — return undefined
+        " to avoid crashing the interpreter (JS try/catch cannot catch zcx_mjs_runtime)
+        rs_val = undefined_val( ).
     ENDCASE.
   ENDMETHOD.
 
   METHOD eval_bin_op.
-    IF iv_op = `+` AND ( is_left-type = 2 OR is_right-type = 2 ).
+    IF iv_op = `+` AND ( is_left-type = 2 OR is_right-type = 2
+                      OR is_left-type = 4 OR is_right-type = 4
+                      OR is_left-type = 6 OR is_right-type = 6 ).
       rs_val-type = 2.
       rs_val-str  = to_string( is_left ) && to_string( is_right ).
       RETURN.
