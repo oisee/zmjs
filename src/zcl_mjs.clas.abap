@@ -1310,6 +1310,37 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDLOOP.
 
       WHEN zif_mjs=>c_node_call.
+        IF <n>-str = `Object.keys`.
+          DATA(lr_keys_arg) = <n>-args[ 1 ].
+          DATA(ls_keys_in) = eval_node( ir_node = lr_keys_arg io_env = io_env ).
+          IF ls_keys_in-type = 6 AND ls_keys_in-obj IS BOUND.
+            DATA lt_keys_refs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            LOOP AT ls_keys_in-obj->props ASSIGNING FIELD-SYMBOL(<p_keys>).
+              APPEND box_value( string_val( <p_keys>-key ) ) TO lt_keys_refs.
+            ENDLOOP.
+            rs_val = array_val( lt_keys_refs ).
+          ELSE.
+            rs_val = array_val( VALUE #( ) ).
+          ENDIF.
+          RETURN.
+        ELSEIF <n>-str = `Object.defineProperty`.
+          IF lines( <n>-args ) >= 3.
+            DATA(ls_def_obj) = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+            DATA(ls_def_prop) = eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ).
+            DATA(ls_def_desc) = eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ).
+            IF ls_def_obj-type = 6 AND ls_def_obj-obj IS BOUND AND ls_def_desc-type = 6 AND ls_def_desc-obj IS BOUND.
+              DATA(lr_vdesc) = ls_def_desc-obj->get( `value` ).
+              IF lr_vdesc IS BOUND.
+                ls_def_obj-obj->set( iv_key = to_string( ls_def_prop ) ir_val = lr_vdesc ).
+              ENDIF.
+              rs_val = ls_def_obj.
+              RETURN.
+            ENDIF.
+          ENDIF.
+          rs_val = undefined_val( ).
+          RETURN.
+        ENDIF.
+
         IF <n>-str = `Boolean`.
           DATA ls_bool_in TYPE zif_mjs=>ty_value.
           IF lines( <n>-args ) > 0.
