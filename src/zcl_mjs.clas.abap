@@ -465,6 +465,63 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
       ENDIF.
 
+      " Regex literal: /pattern/flags — when context indicates start of expression
+      " (not after number, string, identifier, or closing bracket which would mean division)
+      IF lv_ch = `/`.
+        DATA lv_rxis  TYPE abap_bool VALUE abap_true.
+        DATA ls_ptok  TYPE zif_mjs=>ty_token.
+        DATA lv_nptok TYPE i.
+        lv_nptok = lines( rt_tokens ).
+        IF lv_nptok > 0.
+          READ TABLE rt_tokens INDEX lv_nptok INTO ls_ptok.
+          IF ls_ptok-kind = 0                      " number
+             OR ls_ptok-kind = 1                   " string
+             OR ls_ptok-kind = 2                   " identifier
+             OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
+            lv_rxis = abap_false.
+          ENDIF.
+        ENDIF.
+        IF lv_rxis = abap_true.
+          DATA lv_rxpat  TYPE string.
+          DATA lv_rxflg  TYPE string.
+          DATA lv_rxch   TYPE c LENGTH 1.
+          DATA lv_rxfc   TYPE c LENGTH 1.
+          CLEAR lv_rxpat.
+          CLEAR lv_rxflg.
+          lv_j = lv_i + 1.
+          WHILE lv_j < lv_len.
+            lv_rxch = iv_src+lv_j(1).
+            IF lv_rxch = `/`.
+              EXIT.
+            ENDIF.
+            IF lv_rxch = `\` AND lv_j + 1 < lv_len.
+              lv_rxpat = lv_rxpat && `\`.
+              lv_j = lv_j + 1.
+              lv_rxpat = lv_rxpat && substring( val = iv_src off = lv_j len = 1 ).
+            ELSE.
+              lv_rxpat = lv_rxpat && substring( val = iv_src off = lv_j len = 1 ).
+            ENDIF.
+            lv_j = lv_j + 1.
+          ENDWHILE.
+          lv_j = lv_j + 1.  " skip closing /
+          WHILE lv_j < lv_len.
+            lv_rxfc = iv_src+lv_j(1).
+            IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
+              lv_rxflg = lv_rxflg && lv_rxfc.
+              lv_j = lv_j + 1.
+            ELSE.
+              EXIT.
+            ENDIF.
+          ENDWHILE.
+          CLEAR ls_tok.
+          ls_tok-kind = 6.
+          ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
+          APPEND ls_tok TO rt_tokens.
+          lv_i = lv_j.
+          CONTINUE.
+        ENDIF.
+      ENDIF.
+
       " Single char op/punc
       IF lv_ch = `+` OR lv_ch = `-` OR lv_ch = `*` OR lv_ch = `/`
          OR lv_ch = `%` OR lv_ch = `=` OR lv_ch = `<` OR lv_ch = `>`
@@ -938,6 +995,15 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_bool.
         rs_val-type = 3.
         rs_val-num  = <n>-num.
+
+      WHEN zif_mjs=>c_node_regex.
+        " str = pattern, op = flags string (stored by parser)
+        rs_val-type = 8.
+        rs_val-str  = <n>-str.
+        DATA lv_rx_flagnum TYPE f VALUE 0.
+        IF <n>-op CS `g`. lv_rx_flagnum = lv_rx_flagnum + 1. ENDIF.
+        IF <n>-op CS `i`. lv_rx_flagnum = lv_rx_flagnum + 2. ENDIF.
+        rs_val-num = lv_rx_flagnum.
 
       WHEN zif_mjs=>c_node_ident.
         " Fast path: direct slot read (no method call overhead)
@@ -1627,6 +1693,83 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ELSE.
               rs_val = number_val( 0 ).
+            ENDIF.
+          WHEN `replace`.
+            IF lines( it_args ) >= 2.
+              DATA ls_rep1 TYPE zif_mjs=>ty_value.
+              DATA ls_rep2 TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_rep1.
+              READ TABLE it_args INDEX 2 INTO ls_rep2.
+              DATA(lv_rep_to) = to_string( ls_rep2 ).
+              IF ls_rep1-type = 8.
+                " RegExp first argument — use FIND loop to avoid REPLACE ALL IGNORING CASE runtime issues
+                DATA lv_rxint   TYPE i.
+                DATA lv_rxglob  TYPE abap_bool.
+                DATA lv_rxicase TYPE abap_bool.
+                DATA lv_rxrem   TYPE string.
+                DATA lv_rxout   TYPE string.
+                DATA lv_rxoff   TYPE i.
+                DATA lv_rxmln   TYPE i.
+                DATA lv_rxnxt   TYPE i.
+                lv_rxint   = CONV i( ls_rep1-num ).
+                " bitmask: 1=global, 2=ignoreCase — use explicit comparison (avoid integer division)
+                IF lv_rxint = 1 OR lv_rxint = 3. lv_rxglob  = abap_true. ENDIF.
+                IF lv_rxint = 2 OR lv_rxint = 3. lv_rxicase = abap_true. ENDIF.
+                CLEAR lv_rxout.
+                lv_rxrem = is_obj-str.
+                DO.
+                  IF lv_rxicase = abap_true.
+                    FIND FIRST OCCURRENCE OF REGEX ls_rep1-str IN lv_rxrem
+                      MATCH OFFSET lv_rxoff MATCH LENGTH lv_rxmln IGNORING CASE.
+                  ELSE.
+                    FIND FIRST OCCURRENCE OF REGEX ls_rep1-str IN lv_rxrem
+                      MATCH OFFSET lv_rxoff MATCH LENGTH lv_rxmln.
+                  ENDIF.
+                  IF sy-subrc <> 0. EXIT. ENDIF.
+                  IF lv_rxoff > 0.
+                    lv_rxout = lv_rxout && substring( val = lv_rxrem len = lv_rxoff ).
+                  ENDIF.
+                  lv_rxout = lv_rxout && lv_rep_to.
+                  lv_rxnxt = lv_rxoff + lv_rxmln.
+                  IF lv_rxnxt >= strlen( lv_rxrem ).
+                    CLEAR lv_rxrem.
+                    EXIT.
+                  ENDIF.
+                  lv_rxrem = substring( val = lv_rxrem off = lv_rxnxt ).
+                  IF lv_rxglob = abap_false. EXIT. ENDIF.
+                ENDDO.
+                lv_rxout = lv_rxout && lv_rxrem.
+                rs_val = string_val( lv_rxout ).
+              ELSE.
+                " String first argument
+                DATA(lv_rep_from) = to_string( ls_rep1 ).
+                IF strlen( lv_rep_from ) = 0.
+                  rs_val = string_val( lv_rep_to && is_obj-str ).
+                ELSE.
+                  DATA lv_rep_off TYPE i.
+                  DATA lv_rep_mln TYPE i.
+                  FIND lv_rep_from IN is_obj-str
+                    RESPECTING CASE
+                    MATCH OFFSET lv_rep_off
+                    MATCH LENGTH lv_rep_mln.
+                  IF sy-subrc = 0.
+                    DATA lv_rep_res TYPE string.
+                    IF lv_rep_off > 0.
+                      lv_rep_res = substring( val = is_obj-str len = lv_rep_off ).
+                    ENDIF.
+                    lv_rep_res = lv_rep_res && lv_rep_to.
+                    DATA(lv_rep_tail) = lv_rep_off + lv_rep_mln.
+                    IF lv_rep_tail < strlen( is_obj-str ).
+                      lv_rep_res = lv_rep_res && substring( val = is_obj-str off = lv_rep_tail ).
+                    ENDIF.
+                    rs_val = string_val( lv_rep_res ).
+                  ELSE.
+                    rs_val = string_val( is_obj-str ).
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ELSE.
+              rs_val = string_val( is_obj-str ).
             ENDIF.
           WHEN OTHERS.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.

@@ -819,6 +819,29 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       RETURN.
     ENDIF.
 
+    IF ls_t-kind = 6.
+      next( ).
+      DATA lr_rx  TYPE REF TO zif_mjs=>ty_node.
+      DATA lv_rxv TYPE string.
+      DATA lv_rxs TYPE i.
+      DATA lv_rxnl TYPE c LENGTH 1.
+      CREATE DATA lr_rx.
+      lr_rx->kind = zif_mjs=>c_node_regex.
+      lv_rxv  = ls_t-val.
+      lv_rxnl = cl_abap_char_utilities=>newline.
+      FIND FIRST OCCURRENCE OF lv_rxnl IN lv_rxv MATCH OFFSET lv_rxs.
+      IF sy-subrc = 0.
+        IF lv_rxs > 0.
+          lr_rx->str = lv_rxv(lv_rxs).
+        ENDIF.
+        lr_rx->op = substring( val = lv_rxv off = lv_rxs + 1 ).
+      ELSE.
+        lr_rx->str = lv_rxv.
+      ENDIF.
+      rr_node = lr_rx.
+      RETURN.
+    ENDIF.
+
     IF ls_t-val = `(`.
       " Try arrow function: (params) => ...
       DATA(lv_saved_pos) = pos.
