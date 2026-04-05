@@ -121,6 +121,16 @@ CLASS zcl_mjs IMPLEMENTATION.
     ls_inf-type = 1. ls_inf-str = `Infinity`.
     lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
 
+    " Hoist function declarations at global scope (JS hoisting)
+    FIELD-SYMBOLS <hst_g> TYPE zif_mjs=>ty_node.
+    LOOP AT lt_stmts INTO DATA(lr_hoist_s).
+      IF lr_hoist_s IS NOT BOUND. CONTINUE. ENDIF.
+      ASSIGN lr_hoist_s->* TO <hst_g>.
+      IF sy-subrc = 0 AND <hst_g>-kind = zif_mjs=>c_node_func_decl AND <hst_g>-str IS NOT INITIAL.
+        eval_node( ir_node = lr_hoist_s io_env = lo_env ).
+      ENDIF.
+    ENDLOOP.
+
     LOOP AT lt_stmts INTO DATA(lr_stmt).
       eval_node( ir_node = lr_stmt io_env = lo_env ).
     ENDLOOP.
@@ -171,7 +181,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
 
-      " Skip whitespace
+      " Skip whitespace, // and /* comments
       IF lv_ch = ` ` OR lv_ch = cl_abap_char_utilities=>horizontal_tab
          OR lv_ch = cl_abap_char_utilities=>newline
          OR lv_ch = cl_abap_char_utilities=>cr_lf(1).
@@ -179,15 +189,26 @@ CLASS zcl_mjs IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-      " Skip // comments
       IF lv_i + 1 < lv_len.
-        IF lv_ch = `/` AND iv_src+lv_i(2) = `//`.
+        IF iv_src+lv_i(2) = `//`.
+          lv_i = lv_i + 2.
           WHILE lv_i < lv_len.
             IF iv_src+lv_i(1) = cl_abap_char_utilities=>newline.
               EXIT.
             ENDIF.
             lv_i = lv_i + 1.
           ENDWHILE.
+          CONTINUE.
+        ELSEIF iv_src+lv_i(2) = `/*`.
+          lv_j = lv_i + 2.
+          WHILE lv_j + 1 < lv_len.
+            IF iv_src+lv_j(2) = `*/`.
+              lv_j = lv_j + 2.
+              EXIT.
+            ENDIF.
+            lv_j = lv_j + 1.
+          ENDWHILE.
+          lv_i = lv_j.
           CONTINUE.
         ENDIF.
       ENDIF.
@@ -218,6 +239,56 @@ CLASS zcl_mjs IMPLEMENTATION.
               TRANSLATE lv_hc TO LOWER CASE.
               FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
               lv_hexval = lv_hexval * 16 + lv_hpos.
+            ENDDO.
+            CLEAR ls_tok.
+            ls_tok-kind = 0.
+            ls_tok-val  = |{ lv_hexval }|.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ELSEIF lv_nhc = `b` OR lv_nhc = `B`.
+            " Binary literal: 0b... or 0B...
+            lv_j = lv_i + 2.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d = `0` OR lv_d = `1`.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            lv_hexdig = `0123456789abcdef`.
+            lv_hexval = 0.
+            DO lv_j - lv_i - 2 TIMES.
+              lv_hk = lv_i + 1 + sy-index.
+              lv_hc = iv_src+lv_hk(1).
+              FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              lv_hexval = lv_hexval * 2 + lv_hpos.
+            ENDDO.
+            CLEAR ls_tok.
+            ls_tok-kind = 0.
+            ls_tok-val  = |{ lv_hexval }|.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ELSEIF lv_nhc = `o` OR lv_nhc = `O`.
+            " Octal literal: 0o... or 0O...
+            lv_j = lv_i + 2.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d >= `0` AND lv_d <= `7`.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            lv_hexdig = `0123456789abcdef`.
+            lv_hexval = 0.
+            DO lv_j - lv_i - 2 TIMES.
+              lv_hk = lv_i + 1 + sy-index.
+              lv_hc = iv_src+lv_hk(1).
+              FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              lv_hexval = lv_hexval * 8 + lv_hpos.
             ENDDO.
             CLEAR ls_tok.
             ls_tok-kind = 0.
@@ -510,22 +581,24 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
             lv_j = lv_j + 1.
           ENDWHILE.
-          lv_j = lv_j + 1.  " skip closing /
-          WHILE lv_j < lv_len.
-            lv_rxfc = iv_src+lv_j(1).
-            IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
-              lv_rxflg = lv_rxflg && lv_rxfc.
-              lv_j = lv_j + 1.
-            ELSE.
-              EXIT.
-            ENDIF.
-          ENDWHILE.
-          CLEAR ls_tok.
-          ls_tok-kind = 6.
-          ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
-          APPEND ls_tok TO rt_tokens.
-          lv_i = lv_j.
-          CONTINUE.
+          IF lv_j < lv_len.
+            lv_j = lv_j + 1.  " skip closing /
+            WHILE lv_j < lv_len.
+              lv_rxfc = iv_src+lv_j(1).
+              IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
+                lv_rxflg = lv_rxflg && lv_rxfc.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            CLEAR ls_tok.
+            ls_tok-kind = 6.
+            ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ENDIF.
         ENDIF.
       ENDIF.
 
@@ -756,6 +829,16 @@ CLASS zcl_mjs IMPLEMENTATION.
     IF <fn>-needs_arguments = abap_true.
       lo_call_env->define( iv_name = `arguments` is_val = array_from_slots( it_args ) ).
     ENDIF.
+
+    " Hoist function declarations (JS hoisting: fn decls precede other statements)
+    FIELD-SYMBOLS <hst_n> TYPE zif_mjs=>ty_node.
+    LOOP AT <fn>-body INTO DATA(lr_hoist).
+      IF lr_hoist IS NOT BOUND. CONTINUE. ENDIF.
+      ASSIGN lr_hoist->* TO <hst_n>.
+      IF sy-subrc = 0 AND <hst_n>-kind = zif_mjs=>c_node_func_decl AND <hst_n>-str IS NOT INITIAL.
+        eval_node( ir_node = lr_hoist io_env = lo_call_env ).
+      ENDIF.
+    ENDLOOP.
 
     " Execute body
     LOOP AT <fn>-body INTO DATA(lr_stmt).

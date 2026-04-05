@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 async function run() {
   const js = fs.readFileSync(__dirname + path.sep + "zmjs_test262.js", "utf-8");
   const result = await abap.Classes["ZCL_MJS"].eval({iv_source: new abap.types.String().set(js)});
-  console.log(result);
+  console.log(result.get());
 }
 
 run();

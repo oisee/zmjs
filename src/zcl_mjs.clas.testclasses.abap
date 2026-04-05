@@ -42,6 +42,10 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_json_stringify_escape FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_special FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_unicode_escape FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_func_hoist FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -587,4 +591,61 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |undefined null null \{"a":1,"c":2\}| ).
   ENDMETHOD.
 
+  METHOD test_func_hoist.
+    " Inner function declaration hoisted: callable before its declaration site
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function outer() {` && lv_nl &&
+      `  var result = inner();` && lv_nl &&
+      `  function inner() { return 42; }` && lv_nl &&
+      `  return result;` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(outer());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
+  ENDMETHOD.
+
+  METHOD test_binary_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(0b0);`   && lv_nl &&
+      `console.log(0b1);`   && lv_nl &&
+      `console.log(0b10);`  && lv_nl &&
+      `console.log(0B1010);` && lv_nl &&
+      `console.log(0b11111111);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 1 2 10 255| ).
+  ENDMETHOD.
+
+  METHOD test_octal_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(0o0);`  && lv_nl &&
+      `console.log(0o7);`  && lv_nl &&
+      `console.log(0o10);` && lv_nl &&
+      `console.log(0O17);` && lv_nl &&
+      `console.log(0o377);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 7 8 15 255| ).
+  ENDMETHOD.
+
+  METHOD test_comment.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function run(version) {` && lv_nl &&
+      `  if (version === "v702" /* v702 */) {` && lv_nl &&
+      `    return "old";` && lv_nl &&
+      `  }` && lv_nl &&
+      `  return "new";` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(run("v750"));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |new| ).
+  ENDMETHOD.
+
 ENDCLASS.
+
