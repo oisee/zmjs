@@ -43,6 +43,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_json_stringify_special FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_unicode_escape FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_func_hoist FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -603,4 +605,31 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |42| ).
   ENDMETHOD.
 
+  METHOD test_binary_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(0b0);`   && lv_nl &&
+      `console.log(0b1);`   && lv_nl &&
+      `console.log(0b10);`  && lv_nl &&
+      `console.log(0B1010);` && lv_nl &&
+      `console.log(0b11111111);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 1 2 10 255| ).
+  ENDMETHOD.
+
+  METHOD test_octal_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(0o0);`  && lv_nl &&
+      `console.log(0o7);`  && lv_nl &&
+      `console.log(0o10);` && lv_nl &&
+      `console.log(0O17);` && lv_nl &&
+      `console.log(0o377);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 7 8 15 255| ).
+  ENDMETHOD.
+
 ENDCLASS.
+

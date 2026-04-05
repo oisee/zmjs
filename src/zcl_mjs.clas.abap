@@ -235,6 +235,56 @@ CLASS zcl_mjs IMPLEMENTATION.
             APPEND ls_tok TO rt_tokens.
             lv_i = lv_j.
             CONTINUE.
+          ELSEIF lv_nhc = `b` OR lv_nhc = `B`.
+            " Binary literal: 0b... or 0B...
+            lv_j = lv_i + 2.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d = `0` OR lv_d = `1`.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            lv_hexdig = `0123456789abcdef`.
+            lv_hexval = 0.
+            DO lv_j - lv_i - 2 TIMES.
+              lv_hk = lv_i + 1 + sy-index.
+              lv_hc = iv_src+lv_hk(1).
+              FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              lv_hexval = lv_hexval * 2 + lv_hpos.
+            ENDDO.
+            CLEAR ls_tok.
+            ls_tok-kind = 0.
+            ls_tok-val  = |{ lv_hexval }|.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ELSEIF lv_nhc = `o` OR lv_nhc = `O`.
+            " Octal literal: 0o... or 0O...
+            lv_j = lv_i + 2.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d >= `0` AND lv_d <= `7`.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            lv_hexdig = `0123456789abcdef`.
+            lv_hexval = 0.
+            DO lv_j - lv_i - 2 TIMES.
+              lv_hk = lv_i + 1 + sy-index.
+              lv_hc = iv_src+lv_hk(1).
+              FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              lv_hexval = lv_hexval * 8 + lv_hpos.
+            ENDDO.
+            CLEAR ls_tok.
+            ls_tok-kind = 0.
+            ls_tok-val  = |{ lv_hexval }|.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
           ENDIF.
         ENDIF.
         " Decimal + optional scientific exponent
