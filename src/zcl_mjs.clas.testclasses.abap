@@ -31,6 +31,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_class_expr_extends FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_replace FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_regex FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_trim FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -318,6 +319,23 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |hello JS aaXbcc hello| ).
+  ENDMETHOD.
+
+  METHOD test_trim.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("  hello  ".trim());` && lv_nl &&
+      `console.log("  hello".trim());` && lv_nl &&
+      `console.log("hello  ".trim());` && lv_nl &&
+      `console.log("hello".trim());` && lv_nl &&
+      `console.log("   ".trim());` && lv_nl &&
+      `console.log("\t hello \t".trim());` && lv_nl &&
+      `console.log("\n hello \n".trim());` && lv_nl &&
+      `console.log("\r hello \r".trim());` && lv_nl &&
+      `console.log("\t\n\r hello \r\n\t".trim());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello hello hello hello hello hello hello hello| ).
   ENDMETHOD.
 
   METHOD test_replace_regex.
