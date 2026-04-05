@@ -31,6 +31,10 @@ CLASS zcl_mjs_env DEFINITION PUBLIC.
     METHODS define
       IMPORTING iv_name TYPE string
                 is_val  TYPE zif_mjs=>ty_value.
+    " Check whether a variable name exists anywhere in the scope chain
+    METHODS has
+      IMPORTING iv_name        TYPE string
+      RETURNING VALUE(rv_found) TYPE abap_bool.
     " Fast slot access — caller must know slot_map is set
     METHODS get_slot
       IMPORTING iv_slot       TYPE i
@@ -77,6 +81,20 @@ CLASS zcl_mjs_env IMPLEMENTATION.
       RETURN.
     ENDIF.
     rs_val-type = 0. " undefined
+  ENDMETHOD.
+
+  METHOD has.
+    IF slot_map IS BOUND.
+      READ TABLE slot_map->* WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0. rv_found = abap_true. RETURN. ENDIF.
+    ENDIF.
+    READ TABLE vars WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
+    IF sy-subrc = 0. rv_found = abap_true. RETURN. ENDIF.
+    IF parent IS BOUND.
+      rv_found = parent->has( iv_name ).
+      RETURN.
+    ENDIF.
+    rv_found = abap_false.
   ENDMETHOD.
 
   METHOD set.

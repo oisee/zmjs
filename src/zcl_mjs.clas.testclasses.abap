@@ -46,6 +46,10 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_reference_error FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_static_method_computed FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -415,6 +419,25 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |2| ).
   ENDMETHOD.
 
+  METHOD test_static_method_computed.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var C = class {` && lv_nl &&
+      `  static m() {` && lv_nl &&
+      `    var obj = {fn: function() { return 42; }};` && lv_nl &&
+      `    var k = "fn";` && lv_nl &&
+      `    var ret = [];` && lv_nl &&
+      `    ret.push(obj[k]());` && lv_nl &&
+      `    return ret;` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `console.log("should print");` && lv_nl &&
+      `console.log(C.m()[0]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |should print 42| ).
+  ENDMETHOD.
+
   METHOD test262.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     DATA(lv_js) =
@@ -647,5 +670,51 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |new| ).
   ENDMETHOD.
 
-ENDCLASS.
+  METHOD test_iife.
+    " Named function expressions called immediately (IIFE) should return the call result
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var x = (function(arg){ return arg; })(42);` && lv_nl &&
+      `console.log(x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
+  ENDMETHOD.
 
+  METHOD test_named_func_expr_scope.
+    " ECMAScript S13_A2: the name of a named function expression must NOT
+    " be visible in the enclosing scope — only inside the function body.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var x = (function __func(arg){ return arg; })(1);` && lv_nl &&
+      `console.log(x);` && lv_nl &&
+      `console.log(typeof __func);`.
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |1| )
+      msg = |Named func expr: expected x=1, got: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |undefined| )
+      msg = |Named func expr: __func must be undefined outside, got: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_reference_error.
+    " Accessing an undeclared variable must throw ReferenceError (zcx_mjs_throw),
+    " not silently return undefined.
+    TRY.
+        zcl_mjs=>eval( |e1| ).
+        cl_abap_unit_assert=>fail( |Expected zcx_mjs_throw for undeclared variable| ).
+      CATCH zcx_mjs_throw INTO DATA(lx).
+        " Success: ReferenceError was thrown
+        cl_abap_unit_assert=>assert_true(
+          act = boolc( lx->val-str CS |ReferenceError| )
+          msg = |Wrong error message: { lx->val-str }| ).
+    ENDTRY.
+    " typeof on an undeclared variable must NOT throw — returns 'undefined'
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(typeof e1)| ) )
+      exp = |undefined| ).
+  ENDMETHOD.
+
+
+ENDCLASS.

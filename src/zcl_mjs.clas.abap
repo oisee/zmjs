@@ -120,6 +120,22 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA ls_inf TYPE zif_mjs=>ty_value.
     ls_inf-type = 1. ls_inf-str = `Infinity`.
     lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
+    " Standard error constructors — defined as undefined placeholders so that
+    " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
+    lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `TypeError`      is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `SyntaxError`    is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `RangeError`     is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `URIError`       is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `EvalError`      is_val = undefined_val( ) ).
+    " 'this' and 'arguments' fallbacks: in sloppy-mode plain function calls
+    " these are not bound to a local slot; return undefined rather than ReferenceError.
+    lo_env->define( iv_name = `this`      is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `arguments` is_val = undefined_val( ) ).
+    " Other JS builtins / keywords that may appear as expressions in partially-parsed code
+    lo_env->define( iv_name = `eval`      is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `in`        is_val = undefined_val( ) ).
 
     " Hoist function declarations at global scope (JS hoisting)
     FIELD-SYMBOLS <hst_g> TYPE zif_mjs=>ty_node.
@@ -942,7 +958,8 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_func_decl.
         " Named function declaration: the name itself is a local
-        IF <n>-str IS NOT INITIAL.
+        " Function expressions (op='E') must NOT add their name to the enclosing scope
+        IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
           READ TABLE ct_map WITH TABLE KEY name = <n>-str TRANSPORTING NO FIELDS.
           IF sy-subrc <> 0.
             DATA ls_se2 TYPE zif_mjs=>ty_slot_entry.
@@ -1108,6 +1125,13 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot INTO rs_val.
         ELSE.
+          IF io_env->has( <n>-str ) = abap_false.
+            DATA lx_referr TYPE REF TO zcx_mjs_throw.
+            DATA ls_refmsg TYPE zif_mjs=>ty_value.
+            ls_refmsg = string_val( |ReferenceError: { <n>-str } is not defined| ).
+            CREATE OBJECT lx_referr EXPORTING is_val = ls_refmsg.
+            RAISE EXCEPTION lx_referr.
+          ENDIF.
           rs_val = io_env->get( <n>-str ).
         ENDIF.
 
@@ -1350,6 +1374,19 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           RETURN.
         ENDIF.
+        " Expression call: callee is a sub-expression (e.g. IIFE, returned function)
+        IF <n>-left IS BOUND.
+          DATA ls_efn TYPE zif_mjs=>ty_value.
+          ls_efn = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF ls_efn-type = 4 AND ls_efn-fn IS BOUND.
+            DATA lt_iife_args TYPE zif_mjs=>tt_value_slots.
+            LOOP AT <n>-args INTO DATA(lr_iife_arg).
+              APPEND eval_node( ir_node = lr_iife_arg io_env = io_env ) TO lt_iife_args.
+            ENDLOOP.
+            rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_iife_args io_env = io_env ).
+          ENDIF.
+          RETURN.
+        ENDIF.
         DATA(ls_fn) = io_env->get( <n>-str ).
         IF ls_fn-type = 4 AND ls_fn-fn IS BOUND.
           DATA lt_call_args TYPE zif_mjs=>tt_value_slots.
@@ -1390,7 +1427,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA ls_fnval TYPE zif_mjs=>ty_value.
         ls_fnval-type = 4.
         ls_fnval-fn   = lr_fn_data.
-        IF <n>-str IS NOT INITIAL.
+        " Function expressions (op='E') must NOT register their name in the enclosing scope
+        IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
           IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
             READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_fn>).
             IF sy-subrc = 0. <sv_fn> = ls_fnval. ENDIF.
@@ -1510,7 +1548,21 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
       WHEN zif_mjs=>c_node_typeof.
-        DATA(ls_toval) = eval_node( ir_node = <n>-left io_env = io_env ).
+        DATA ls_toval TYPE zif_mjs=>ty_value.
+        ls_toval = undefined_val( ).
+        " Per spec: typeof on an unresolvable simple identifier returns "undefined".
+        " All other expressions evaluate normally (exceptions propagate).
+        FIELD-SYMBOLS <to_n> TYPE zif_mjs=>ty_node.
+        IF <n>-left IS BOUND.
+          ASSIGN <n>-left->* TO <to_n>.
+          IF sy-subrc = 0 AND <to_n>-kind = zif_mjs=>c_node_ident
+              AND <to_n>-slot_ok = abap_false
+              AND io_env->has( <to_n>-str ) = abap_false.
+            rs_val = string_val( `undefined` ).
+            RETURN.
+          ENDIF.
+        ENDIF.
+        ls_toval = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE ls_toval-type.
           WHEN 0.
             rs_val = string_val( `undefined` ).

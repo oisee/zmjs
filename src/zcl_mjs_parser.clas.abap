@@ -129,6 +129,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         RETURN.
       WHEN `break`.
         next( ).
+        IF peek( )-kind = 2.  " consume optional label identifier (e.g. break do_out;)
+          next( ).
+        ENDIF.
         IF peek( )-val = `;`.
           next( ).
         ENDIF.
@@ -139,6 +142,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         RETURN.
       WHEN `continue`.
         next( ).
+        IF peek( )-kind = 2.  " consume optional label identifier (e.g. continue do_out;)
+          next( ).
+        ENDIF.
         IF peek( )-val = `;`.
           next( ).
         ENDIF.
@@ -173,6 +179,19 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         RETURN.
     ENDCASE.
 
+    " Handle labeled statement: <ident> ':' <statement>
+    " Peek ahead: if current is identifier and next token is ':', skip both and parse body
+    IF ls_t-kind = 2.
+      DATA(lv_saved_lbl) = pos.
+      next( ).
+      IF peek( )-val = `:`.
+        next( ).
+        rr_node = parse_statement( ).
+        RETURN.
+      ENDIF.
+      pos = lv_saved_lbl.
+    ENDIF.
+
     rr_node = parse_expr( ).
     IF peek( )-val = `,`.
       DATA lt_seq TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
@@ -200,14 +219,44 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       next( ).
       lr_init = parse_expr( ).
     ENDIF.
-    IF peek( )-val = `;`.
-      next( ).
-    ENDIF.
     DATA lr_n TYPE REF TO zif_mjs=>ty_node.
     CREATE DATA lr_n.
     lr_n->kind = zif_mjs=>c_node_var.
     lr_n->str  = lv_name.
     lr_n->right = lr_init.
+    " Handle comma-separated declarations: var a, b = 1, c;
+    IF peek( )-val = `,`.
+      DATA lt_vars TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+      APPEND lr_n TO lt_vars.
+      WHILE peek( )-val = `,`.
+        next( ).
+        DATA(lv_nm2) = next( )-val.
+        DATA lr_i2 TYPE REF TO data.
+        IF peek( )-val = `=`.
+          next( ).
+          lr_i2 = parse_expr( ).
+        ENDIF.
+        DATA lr_n2 TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_n2.
+        lr_n2->kind  = zif_mjs=>c_node_var.
+        lr_n2->str   = lv_nm2.
+        lr_n2->right = lr_i2.
+        APPEND lr_n2 TO lt_vars.
+        CLEAR lr_i2.
+      ENDWHILE.
+      IF peek( )-val = `;`.
+        next( ).
+      ENDIF.
+      DATA lr_blk TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_blk.
+      lr_blk->kind = zif_mjs=>c_node_block.
+      lr_blk->body = lt_vars.
+      rr_node = lr_blk.
+      RETURN.
+    ENDIF.
+    IF peek( )-val = `;`.
+      next( ).
+    ENDIF.
     rr_node = lr_n.
   ENDMETHOD.
 
@@ -365,6 +414,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA lt_methods TYPE zif_mjs=>tt_class_methods.
     WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
       DATA(lv_mname) = next( )-val.
+      IF lv_mname = `static`.
+        lv_mname = next( )-val.
+      ENDIF.
       expect( `(` ).
       DATA lt_params TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
       CLEAR lt_params.
@@ -788,7 +840,23 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           lr_call->args = lt_fargs.
           lr_left = lr_call.
         ELSE.
-          lv_continue = abap_false.
+          " Expression call: callee is any expression (e.g. IIFE)
+          next( ).
+          DATA lt_efargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+          CLEAR lt_efargs.
+          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+            APPEND parse_expr( ) TO lt_efargs.
+            IF peek( )-val = `,`.
+              next( ).
+            ENDIF.
+          ENDWHILE.
+          expect( `)` ).
+          DATA lr_ecall TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_ecall.
+          lr_ecall->kind = zif_mjs=>c_node_call.
+          lr_ecall->left = lr_left.
+          lr_ecall->args = lt_efargs.
+          lr_left = lr_ecall.
         ENDIF.
       ELSE.
         lv_continue = abap_false.
@@ -931,6 +999,12 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
     IF ls_t-val = `function`.
       rr_node = parse_func( ).
+      " Mark as function expression: name must not leak to enclosing scope
+      FIELD-SYMBOLS <fn_expr_node> TYPE zif_mjs=>ty_node.
+      ASSIGN rr_node->* TO <fn_expr_node>.
+      IF sy-subrc = 0.
+        <fn_expr_node>-op = `E`.
+      ENDIF.
       RETURN.
     ENDIF.
 
