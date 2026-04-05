@@ -48,6 +48,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_reference_error FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -677,5 +678,23 @@ CLASS ltcl_test IMPLEMENTATION.
       msg = |Named func expr: __func must be undefined outside, got: { lv_r }| ).
   ENDMETHOD.
 
-ENDCLASS.
+  METHOD test_reference_error.
+    " Accessing an undeclared variable must throw ReferenceError (zcx_mjs_throw),
+    " not silently return undefined.
+    TRY.
+        zcl_mjs=>eval( |e1| ).
+        cl_abap_unit_assert=>fail( |Expected zcx_mjs_throw for undeclared variable| ).
+      CATCH zcx_mjs_throw INTO DATA(lx).
+        " Success: ReferenceError was thrown
+        cl_abap_unit_assert=>assert_true(
+          act = boolc( lx->val-str CS |ReferenceError| )
+          msg = |Wrong error message: { lx->val-str }| ).
+    ENDTRY.
+    " typeof on an undeclared variable must NOT throw — returns 'undefined'
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(typeof e1)| ) )
+      exp = |undefined| ).
+  ENDMETHOD.
 
+
+ENDCLASS.
