@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "test262": "abaplint && abap_transpile && node test262/run.mjs",
     "test": "abaplint && abap_transpile && node output/index.mjs"
   },
   "repository": {

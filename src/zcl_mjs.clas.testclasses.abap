@@ -33,6 +33,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_replace_regex FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_trim FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -482,6 +484,29 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_char_cp(
       act = zcl_mjs=>eval( lv_js )
       exp = `*PASS=44 FAIL=0*` ).
+  ENDMETHOD.
+
+  METHOD test_function_tostring.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function greet() { return "hi"; }` && lv_nl &&
+      `var s = greet.toString();` && lv_nl &&
+      `var same = (greet + 1 === s + 1);` && lv_nl &&
+      `console.log(same);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `true` ).
+  ENDMETHOD.
+
+  METHOD test_function_props.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function f() {}` && lv_nl &&
+      `f.myProp = 42;` && lv_nl &&
+      `console.log(f.myProp);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `42` ).
   ENDMETHOD.
 
 ENDCLASS.
