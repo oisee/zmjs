@@ -41,6 +41,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_json_stringify_nested FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_escape FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_special FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_unicode_escape FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -560,6 +561,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |"say \\"hi\\""| ).
+  ENDMETHOD.
+
+  METHOD test_unicode_escape.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("\u0041");` && lv_nl &&
+      `console.log("\u00e9" === "\u00E9");` && lv_nl &&
+      `console.log("\u2029".charCodeAt(0));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |A true 8233| ).
   ENDMETHOD.
 
   METHOD test_json_stringify_special.

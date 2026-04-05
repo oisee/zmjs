@@ -166,6 +166,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
     lv_bt = |`|.
     lv_len = strlen( iv_src ).
+    lv_hexdig = `0123456789abcdef`.
 
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
@@ -317,7 +318,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF lv_esc_cp < 128.
                   lv_ub1 = lv_esc_cp. lv_utf8x = lv_ub1.
                 ELSE.
-                  lv_ub1 = 192 + lv_esc_cp / 64.
+                  lv_ub1 = 192 + lv_esc_cp DIV 64.
                   lv_ub2 = 128 + lv_esc_cp MOD 64.
                   CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
                 ENDIF.
@@ -337,12 +338,12 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF lv_esc_cp < 128.
                   lv_ub1 = lv_esc_cp. lv_utf8x = lv_ub1.
                 ELSEIF lv_esc_cp < 2048.
-                  lv_ub1 = 192 + lv_esc_cp / 64.
+                  lv_ub1 = 192 + lv_esc_cp DIV 64.
                   lv_ub2 = 128 + lv_esc_cp MOD 64.
                   CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
                 ELSE.
-                  lv_ub1 = 224 + lv_esc_cp / 4096.
-                  lv_ub2 = 128 + ( lv_esc_cp / 64 ) MOD 64.
+                  lv_ub1 = 224 + lv_esc_cp DIV 4096.
+                  lv_ub2 = 128 + ( lv_esc_cp DIV 64 ) MOD 64.
                   lv_ub3 = 128 + lv_esc_cp MOD 64.
                   CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_utf8x IN BYTE MODE.
                 ENDIF.
