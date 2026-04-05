@@ -42,6 +42,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_json_stringify_escape FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_special FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_unicode_escape FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_func_hoist FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -585,6 +586,21 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |undefined null null \{"a":1,"c":2\}| ).
+  ENDMETHOD.
+
+  METHOD test_func_hoist.
+    " Inner function declaration hoisted: callable before its declaration site
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function outer() {` && lv_nl &&
+      `  var result = inner();` && lv_nl &&
+      `  function inner() { return 42; }` && lv_nl &&
+      `  return result;` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(outer());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
   ENDMETHOD.
 
 ENDCLASS.
