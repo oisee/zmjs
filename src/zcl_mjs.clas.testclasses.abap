@@ -35,6 +35,12 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_prim FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_obj FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_arr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_nested FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_escape FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_json_stringify_special FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -507,6 +513,66 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = `42` ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_prim.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(JSON.stringify(42));` && lv_nl &&
+      `console.log(JSON.stringify("hello"));` && lv_nl &&
+      `console.log(JSON.stringify(true));` && lv_nl &&
+      `console.log(JSON.stringify(false));` && lv_nl &&
+      `console.log(JSON.stringify(null));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42 "hello" true false null| ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_obj.
+    DATA(lv_js) =
+      `console.log(JSON.stringify({a: 1, b: "x"}));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |\{"a":1,"b":"x"\}| ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_arr.
+    DATA(lv_js) =
+      `console.log(JSON.stringify([1, "two", true, null]));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |[1,"two",true,null]| ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_nested.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let o = {x: {y: 2}, arr: [1, 2, 3]};` && lv_nl &&
+      `console.log(JSON.stringify(o));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |\{"x":\{"y":2\},"arr":[1,2,3]\}| ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_escape.
+    DATA(lv_js) =
+      `console.log(JSON.stringify("say \"hi\""));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |"say \\"hi\\""| ).
+  ENDMETHOD.
+
+  METHOD test_json_stringify_special.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(JSON.stringify(undefined));` && lv_nl &&
+      `console.log(JSON.stringify(NaN));` && lv_nl &&
+      `console.log(JSON.stringify(Infinity));` && lv_nl &&
+      `let o = {a: 1, b: undefined, c: 2};` && lv_nl &&
+      `console.log(JSON.stringify(o));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |undefined null null \{"a":1,"c":2\}| ).
   ENDMETHOD.
 
 ENDCLASS.

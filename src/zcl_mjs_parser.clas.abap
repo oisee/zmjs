@@ -943,7 +943,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       next( ).
       DATA lv_name TYPE string.
       lv_name = ls_t-val.
-      IF lv_name = `console` AND peek( )-val = `.`.
+      IF ( lv_name = `console` OR lv_name = `JSON` OR lv_name = `Math` ) AND peek( )-val = `.`.
         next( ).
         DATA(lv_sub) = next( )-val.
         DATA(lv_full) = |{ lv_name }.{ lv_sub }|.
