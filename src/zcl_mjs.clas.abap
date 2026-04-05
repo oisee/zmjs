@@ -942,7 +942,8 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_func_decl.
         " Named function declaration: the name itself is a local
-        IF <n>-str IS NOT INITIAL.
+        " Function expressions (op='E') must NOT add their name to the enclosing scope
+        IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
           READ TABLE ct_map WITH TABLE KEY name = <n>-str TRANSPORTING NO FIELDS.
           IF sy-subrc <> 0.
             DATA ls_se2 TYPE zif_mjs=>ty_slot_entry.
@@ -1403,7 +1404,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA ls_fnval TYPE zif_mjs=>ty_value.
         ls_fnval-type = 4.
         ls_fnval-fn   = lr_fn_data.
-        IF <n>-str IS NOT INITIAL.
+        " Function expressions (op='E') must NOT register their name in the enclosing scope
+        IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
           IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
             READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_fn>).
             IF sy-subrc = 0. <sv_fn> = ls_fnval. ENDIF.

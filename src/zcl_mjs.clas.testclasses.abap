@@ -47,6 +47,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -657,6 +658,23 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |42| ).
+  ENDMETHOD.
+
+  METHOD test_named_func_expr_scope.
+    " ECMAScript S13_A2: the name of a named function expression must NOT
+    " be visible in the enclosing scope — only inside the function body.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var x = (function __func(arg){ return arg; })(1);` && lv_nl &&
+      `console.log(x);` && lv_nl &&
+      `console.log(typeof __func);`.
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |1| )
+      msg = |Named func expr: expected x=1, got: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |undefined| )
+      msg = |Named func expr: __func must be undefined outside, got: { lv_r }| ).
   ENDMETHOD.
 
 ENDCLASS.

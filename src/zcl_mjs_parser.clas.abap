@@ -947,6 +947,12 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
     IF ls_t-val = `function`.
       rr_node = parse_func( ).
+      " Mark as function expression: name must not leak to enclosing scope
+      FIELD-SYMBOLS <fn_expr_node> TYPE zif_mjs=>ty_node.
+      ASSIGN rr_node->* TO <fn_expr_node>.
+      IF sy-subrc = 0.
+        <fn_expr_node>-op = `E`.
+      ENDIF.
       RETURN.
     ENDIF.
 
