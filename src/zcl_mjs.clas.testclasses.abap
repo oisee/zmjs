@@ -46,6 +46,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -645,6 +646,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |new| ).
+  ENDMETHOD.
+
+  METHOD test_iife.
+    " Named function expressions called immediately (IIFE) should return the call result
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var x = (function(arg){ return arg; })(42);` && lv_nl &&
+      `console.log(x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
   ENDMETHOD.
 
 ENDCLASS.

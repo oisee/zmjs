@@ -1350,6 +1350,19 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           RETURN.
         ENDIF.
+        " Expression call: callee is a sub-expression (e.g. IIFE, returned function)
+        IF <n>-left IS BOUND.
+          DATA ls_efn TYPE zif_mjs=>ty_value.
+          ls_efn = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF ls_efn-type = 4 AND ls_efn-fn IS BOUND.
+            DATA lt_iife_args TYPE zif_mjs=>tt_value_slots.
+            LOOP AT <n>-args INTO DATA(lr_iife_arg).
+              APPEND eval_node( ir_node = lr_iife_arg io_env = io_env ) TO lt_iife_args.
+            ENDLOOP.
+            rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_iife_args io_env = io_env ).
+          ENDIF.
+          RETURN.
+        ENDIF.
         DATA(ls_fn) = io_env->get( <n>-str ).
         IF ls_fn-type = 4 AND ls_fn-fn IS BOUND.
           DATA lt_call_args TYPE zif_mjs=>tt_value_slots.

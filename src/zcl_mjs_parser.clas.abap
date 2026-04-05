@@ -788,7 +788,23 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           lr_call->args = lt_fargs.
           lr_left = lr_call.
         ELSE.
-          lv_continue = abap_false.
+          " Expression call: callee is any expression (e.g. IIFE)
+          next( ).
+          DATA lt_efargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+          CLEAR lt_efargs.
+          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+            APPEND parse_expr( ) TO lt_efargs.
+            IF peek( )-val = `,`.
+              next( ).
+            ENDIF.
+          ENDWHILE.
+          expect( `)` ).
+          DATA lr_ecall TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_ecall.
+          lr_ecall->kind = zif_mjs=>c_node_call.
+          lr_ecall->left = lr_left.
+          lr_ecall->args = lt_efargs.
+          lr_left = lr_ecall.
         ENDIF.
       ELSE.
         lv_continue = abap_false.
