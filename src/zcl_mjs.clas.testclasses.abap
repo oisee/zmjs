@@ -29,6 +29,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_extends FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expression FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_extends FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_replace FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_replace_regex FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
