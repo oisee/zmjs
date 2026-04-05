@@ -414,6 +414,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA lt_methods TYPE zif_mjs=>tt_class_methods.
     WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
       DATA(lv_mname) = next( )-val.
+      IF lv_mname = `static`.
+        lv_mname = next( )-val.
+      ENDIF.
       expect( `(` ).
       DATA lt_params TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
       CLEAR lt_params.
