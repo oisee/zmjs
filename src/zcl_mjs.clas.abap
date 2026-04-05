@@ -1397,6 +1397,45 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
       WHEN zif_mjs=>c_node_method_call.
+        " Intercept Object.keys / Object.defineProperty before looking up Object in env
+        IF <n>-object IS BOUND.
+          FIELD-SYMBOLS <obj_ident> TYPE zif_mjs=>ty_node.
+          ASSIGN <n>-object->* TO <obj_ident>.
+          IF sy-subrc = 0 AND <obj_ident>-kind = zif_mjs=>c_node_ident AND <obj_ident>-str = `Object`.
+            IF <n>-property = `keys`.
+              IF lines( <n>-args ) > 0.
+                DATA(ls_ok_in) = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+                IF ls_ok_in-type = 6 AND ls_ok_in-obj IS BOUND.
+                  DATA lt_ok_refs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+                  LOOP AT ls_ok_in-obj->props ASSIGNING FIELD-SYMBOL(<p_ok>).
+                    APPEND box_value( string_val( <p_ok>-key ) ) TO lt_ok_refs.
+                  ENDLOOP.
+                  rs_val = array_val( lt_ok_refs ).
+                  RETURN.
+                ENDIF.
+              ENDIF.
+              rs_val = array_val( VALUE #( ) ).
+              RETURN.
+            ELSEIF <n>-property = `defineProperty`.
+              IF lines( <n>-args ) >= 3.
+                DATA(ls_dp_obj)  = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+                DATA(ls_dp_prop) = eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ).
+                DATA(ls_dp_desc) = eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ).
+                IF ls_dp_obj-type = 6 AND ls_dp_obj-obj IS BOUND AND ls_dp_desc-type = 6 AND ls_dp_desc-obj IS BOUND.
+                  DATA(lr_dp_vdesc) = ls_dp_desc-obj->get( `value` ).
+                  IF lr_dp_vdesc IS BOUND.
+                    ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = lr_dp_vdesc ).
+                  ENDIF.
+                  rs_val = ls_dp_obj.
+                  RETURN.
+                ENDIF.
+              ENDIF.
+              rs_val = undefined_val( ).
+              RETURN.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+
         DATA(ls_mcobj) = eval_node( ir_node = <n>-object io_env = io_env ).
         IF <n>-op = `?.` AND ( ls_mcobj-type = 0 OR ls_mcobj-type = 5 ).
           rs_val = undefined_val( ).

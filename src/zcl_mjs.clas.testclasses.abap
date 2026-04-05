@@ -50,6 +50,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_reference_error FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_static_method_computed FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_object_keys FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_object_define_property FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -436,6 +438,30 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |should print 42| ).
+  ENDMETHOD.
+
+  METHOD test_object_keys.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let o = {a: 1, b: 2};` && lv_nl &&
+      `let keys = Object.keys(o);` && lv_nl &&
+      `console.log(keys.length);` && lv_nl &&
+      `console.log(keys[0]);` && lv_nl &&
+      `console.log(keys[1]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 a b| ).
+  ENDMETHOD.
+
+  METHOD test_object_define_property.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let o = {};` && lv_nl &&
+      `Object.defineProperty(o, "p", {value: 42});` && lv_nl &&
+      `console.log(o.p);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
   ENDMETHOD.
 
   METHOD test262.
