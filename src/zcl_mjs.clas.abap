@@ -181,7 +181,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
 
-      " Skip whitespace
+      " Skip whitespace, // and /* comments
       IF lv_ch = ` ` OR lv_ch = cl_abap_char_utilities=>horizontal_tab
          OR lv_ch = cl_abap_char_utilities=>newline
          OR lv_ch = cl_abap_char_utilities=>cr_lf(1).
@@ -189,15 +189,26 @@ CLASS zcl_mjs IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-      " Skip // comments
       IF lv_i + 1 < lv_len.
-        IF lv_ch = `/` AND iv_src+lv_i(2) = `//`.
+        IF iv_src+lv_i(2) = `//`.
+          lv_i = lv_i + 2.
           WHILE lv_i < lv_len.
             IF iv_src+lv_i(1) = cl_abap_char_utilities=>newline.
               EXIT.
             ENDIF.
             lv_i = lv_i + 1.
           ENDWHILE.
+          CONTINUE.
+        ELSEIF iv_src+lv_i(2) = `/*`.
+          lv_j = lv_i + 2.
+          WHILE lv_j + 1 < lv_len.
+            IF iv_src+lv_j(2) = `*/`.
+              lv_j = lv_j + 2.
+              EXIT.
+            ENDIF.
+            lv_j = lv_j + 1.
+          ENDWHILE.
+          lv_i = lv_j.
           CONTINUE.
         ENDIF.
       ENDIF.
@@ -570,22 +581,24 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
             lv_j = lv_j + 1.
           ENDWHILE.
-          lv_j = lv_j + 1.  " skip closing /
-          WHILE lv_j < lv_len.
-            lv_rxfc = iv_src+lv_j(1).
-            IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
-              lv_rxflg = lv_rxflg && lv_rxfc.
-              lv_j = lv_j + 1.
-            ELSE.
-              EXIT.
-            ENDIF.
-          ENDWHILE.
-          CLEAR ls_tok.
-          ls_tok-kind = 6.
-          ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
-          APPEND ls_tok TO rt_tokens.
-          lv_i = lv_j.
-          CONTINUE.
+          IF lv_j < lv_len.
+            lv_j = lv_j + 1.  " skip closing /
+            WHILE lv_j < lv_len.
+              lv_rxfc = iv_src+lv_j(1).
+              IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
+                lv_rxflg = lv_rxflg && lv_rxfc.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            CLEAR ls_tok.
+            ls_tok-kind = 6.
+            ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
+            APPEND ls_tok TO rt_tokens.
+            lv_i = lv_j.
+            CONTINUE.
+          ENDIF.
         ENDIF.
       ENDIF.
 

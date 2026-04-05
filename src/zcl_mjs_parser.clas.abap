@@ -633,7 +633,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_n.
       RETURN.
     ENDIF.
-    IF peek( )-val = `typeof`.
+    IF peek( )-val = `typeof` AND peek( )-kind = 2.
       next( ).
       DATA(lr_op2) = parse_unary( ).
       DATA lr_to TYPE REF TO zif_mjs=>ty_node.
@@ -643,7 +643,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_to.
       RETURN.
     ENDIF.
-    IF peek( )-val = `new`.
+    IF peek( )-val = `new` AND peek( )-kind = 2.
       next( ).
       DATA(lr_c_expr) = parse_primary( ).
       DATA(lv_c_name) = ``.
