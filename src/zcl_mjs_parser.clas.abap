@@ -66,6 +66,9 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
     METHODS parse_throw
       RETURNING VALUE(rr_node) TYPE REF TO data.
   PRIVATE SECTION.
+    METHODS apply_postfix
+      IMPORTING ir_start      TYPE REF TO data
+      RETURNING VALUE(rr_node) TYPE REF TO data.
 ENDCLASS.
 
 CLASS zcl_mjs_parser IMPLEMENTATION.
@@ -665,7 +668,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_new->str  = lv_c_name.
         lr_new->left = lr_c_expr.
         lr_new->args = lt_args.
-        rr_node = lr_new.
+        rr_node = apply_postfix( lr_new ).
         RETURN.
       ENDIF.
     ENDIF.
@@ -673,7 +676,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD parse_postfix.
-    DATA(lr_left) = parse_primary( ).
+    rr_node = apply_postfix( parse_primary( ) ).
+  ENDMETHOD.
+
+  METHOD apply_postfix.
+    DATA(lr_left) = ir_start.
     DATA lv_continue TYPE abap_bool.
     lv_continue = abap_true.
     WHILE lv_continue = abap_true.
