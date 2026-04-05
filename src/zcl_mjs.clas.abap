@@ -1211,6 +1211,23 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val = undefined_val( ).
           RETURN.
         ENDIF.
+        IF <n>-str = `super`.
+          DATA(ls_super_ctor_fn) = io_env->get( `__super_ctor__` ).
+          IF ls_super_ctor_fn-type = 4 AND ls_super_ctor_fn-fn IS BOUND.
+            DATA lt_super_args TYPE zif_mjs=>tt_value_slots.
+            LOOP AT <n>-args INTO DATA(lr_sa).
+              APPEND eval_node( ir_node = lr_sa io_env = io_env ) TO lt_super_args.
+            ENDLOOP.
+            DATA(ls_cur_this) = io_env->get( `this` ).
+            DATA lr_super_this_ref TYPE REF TO data.
+            lr_super_this_ref = box_value( ls_cur_this ).
+            call_function( ir_fn = ls_super_ctor_fn-fn it_args = lt_super_args
+                           io_env = io_env ir_this = lr_super_this_ref ).
+            DATA(ls_updated_this) = unbox_value( lr_super_this_ref ).
+            io_env->define( iv_name = `this` is_val = ls_updated_this ).
+          ENDIF.
+          RETURN.
+        ENDIF.
         DATA(ls_fn) = io_env->get( <n>-str ).
         IF ls_fn-type = 4 AND ls_fn-fn IS BOUND.
           DATA lt_call_args TYPE zif_mjs=>tt_value_slots.
@@ -1455,15 +1472,14 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_class.
         DATA ls_clsobj TYPE zif_mjs=>ty_value.
         ls_clsobj = object_val( ).
+        DATA ls_super_cls_val TYPE zif_mjs=>ty_value.
         IF <n>-op IS NOT INITIAL.
           DATA(ls_super_cls) = io_env->get( <n>-op ).
-          " also check if its a class expression via its node kind if we want to be more robust
-          " but for now let's see if this works
           IF ls_super_cls-type = 6 AND ls_super_cls-obj IS BOUND.
-            " copy methods from parent
             LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
               ls_clsobj-obj->set( iv_key = <sp>-key ir_val = <sp>-val ).
             ENDLOOP.
+            ls_super_cls_val = ls_super_cls.
           ENDIF.
         ELSEIF <n>-left IS BOUND.
           DATA(ls_super_expr) = eval_node( ir_node = <n>-left io_env = io_env ).
@@ -1471,6 +1487,20 @@ CLASS zcl_mjs IMPLEMENTATION.
             LOOP AT ls_super_expr-obj->props ASSIGNING FIELD-SYMBOL(<sep>).
               ls_clsobj-obj->set( iv_key = <sep>-key ir_val = <sep>-val ).
             ENDLOOP.
+            ls_super_cls_val = ls_super_expr.
+          ENDIF.
+        ENDIF.
+        " Build a class-level env; if extends, expose parent constructor as __super_ctor__
+        DATA lo_cls_env TYPE REF TO zcl_mjs_env.
+        CREATE OBJECT lo_cls_env EXPORTING io_parent = io_env.
+        IF ls_super_cls_val-type = 6 AND ls_super_cls_val-obj IS BOUND.
+          DATA lr_sc TYPE REF TO data.
+          lr_sc = ls_super_cls_val-obj->get( `constructor` ).
+          IF lr_sc IS BOUND.
+            DATA(ls_sc_val) = unbox_value( lr_sc ).
+            IF ls_sc_val-type = 4.
+              lo_cls_env->define( iv_name = `__super_ctor__` is_val = ls_sc_val ).
+            ENDIF.
           ENDIF.
         ENDIF.
         LOOP AT <n>-methods INTO DATA(ls_cm).
@@ -1481,7 +1511,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           <mfn>-name    = ls_cm-name.
           <mfn>-params  = ls_cm-params.
           <mfn>-body    = ls_cm-body.
-          <mfn>-closure = io_env.
+          <mfn>-closure = lo_cls_env.
           DATA ls_mfnval TYPE zif_mjs=>ty_value.
           ls_mfnval-type = 4.
           ls_mfnval-fn   = lr_mfn.
