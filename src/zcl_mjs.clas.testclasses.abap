@@ -71,6 +71,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_for_of_undef_or_arr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_of_map FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_substr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_lexer_loop FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1058,6 +1059,26 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |bc hi hij bcdefghij ab| ).
+  ENDMETHOD.
+
+  METHOD test_lexer_loop.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var Lexer = class {` && lv_nl &&
+      `  process() {` && lv_nl &&
+      `    console.log("BEFORE LOOP");` && lv_nl &&
+      `    for (; ; ) {` && lv_nl &&
+      `       console.log("IN LOOP");` && lv_nl &&
+      `       break;` && lv_nl &&
+      `    }` && lv_nl &&
+      `    console.log("AFTER LOOP");` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `var l = new Lexer();` && lv_nl &&
+      `l.process();`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |BEFORE LOOP IN LOOP AFTER LOOP| ).
   ENDMETHOD.
 
 ENDCLASS.

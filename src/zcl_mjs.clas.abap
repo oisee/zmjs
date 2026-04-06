@@ -1373,9 +1373,11 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF lo_for_env->returning = abap_true OR lo_for_env->breaking = abap_true.
             EXIT.
           ENDIF.
-          DATA(ls_fcond) = eval_node( ir_node = <n>-cond io_env = lo_for_env ).
-          IF is_true( ls_fcond ) = abap_false.
-            EXIT.
+          IF <n>-cond IS BOUND.
+            DATA(ls_fcond) = eval_node( ir_node = <n>-cond io_env = lo_for_env ).
+            IF is_true( ls_fcond ) = abap_false.
+              EXIT.
+            ENDIF.
           ENDIF.
           LOOP AT <n>-body INTO DATA(lr_fb).
             eval_node( ir_node = lr_fb io_env = lo_for_env ).
