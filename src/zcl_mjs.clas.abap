@@ -570,7 +570,16 @@ CLASS zcl_mjs IMPLEMENTATION.
           READ TABLE rt_tokens INDEX lv_nptok INTO ls_ptok.
           IF ls_ptok-kind = 0                      " number
              OR ls_ptok-kind = 1                   " string
-             OR ls_ptok-kind = 2                   " identifier
+             OR ( ls_ptok-kind = 2                 " identifier (but not expression-starting keywords)
+                  AND ls_ptok-val <> `return`
+                  AND ls_ptok-val <> `typeof`
+                  AND ls_ptok-val <> `instanceof`
+                  AND ls_ptok-val <> `in`
+                  AND ls_ptok-val <> `of`
+                  AND ls_ptok-val <> `throw`
+                  AND ls_ptok-val <> `case`
+                  AND ls_ptok-val <> `delete`
+                  AND ls_ptok-val <> `void` )
              OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
             lv_rxis = abap_false.
           ENDIF.
