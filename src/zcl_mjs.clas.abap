@@ -188,10 +188,22 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_idlen TYPE i.
     DATA lv_ic TYPE c LENGTH 1.
     DATA lv_sc TYPE c LENGTH 1.
+    DATA lv_linterm_ls TYPE c LENGTH 1.
+    DATA lv_linterm_ps TYPE c LENGTH 1.
+    DATA lv_ls_bytes   TYPE xstring.
 
     lv_bt = |`|.
     lv_len = strlen( iv_src ).
     lv_hexdig = `0123456789abcdef`.
+    " Build U+2028 (LS) and U+2029 (PS) for line-continuation detection
+    lv_ub1 = 226. lv_ub2 = 128. lv_ub3 = 168.
+    CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_ls_bytes IN BYTE MODE.
+    TRY. lv_linterm_ls = cl_abap_codepage=>convert_from( source = lv_ls_bytes ).
+    CATCH cx_sy_conversion_codepage. ENDTRY.
+    lv_ub3 = 169.
+    CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_ls_bytes IN BYTE MODE.
+    TRY. lv_linterm_ps = cl_abap_codepage=>convert_from( source = lv_ls_bytes ).
+    CATCH cx_sy_conversion_codepage. ENDTRY.
 
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
@@ -474,6 +486,20 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_sbuf = lv_sbuf && `'`.
               WHEN `"`.
                 lv_sbuf = lv_sbuf && `"`.
+              WHEN cl_abap_char_utilities=>newline.   " \<LF> line continuation
+                " skip – produce nothing
+              WHEN cl_abap_char_utilities=>cr_lf(1).  " \<CR> line continuation
+                " skip; also consume following <LF> if present (CRLF line ending)
+                IF lv_j + 1 < lv_len.
+                  lv_ni = lv_j + 1.
+                  IF iv_src+lv_ni(1) = cl_abap_char_utilities=>newline.
+                    lv_j = lv_ni.
+                  ENDIF.
+                ENDIF.
+              WHEN lv_linterm_ls.                     " \<U+2028> line continuation
+                " skip – produce nothing
+              WHEN lv_linterm_ps.                     " \<U+2029> line continuation
+                " skip – produce nothing
               WHEN OTHERS.
                 lv_sbuf = lv_sbuf && substring( val = iv_src off = lv_j len = 1 ).
             ENDCASE.
