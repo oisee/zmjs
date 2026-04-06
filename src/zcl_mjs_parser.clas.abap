@@ -39,6 +39,8 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_assign
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_ternary
+      RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_or
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_and
@@ -514,7 +516,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD parse_assign.
-    DATA(lr_left) = parse_or( ).
+    DATA(lr_left) = parse_ternary( ).
     IF peek( )-val = `=`.
       IF lr_left IS BOUND.
         FIELD-SYMBOLS <left_node> TYPE zif_mjs=>ty_node.
@@ -573,6 +575,25 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       ENDIF.
     ENDIF.
     rr_node = lr_left.
+  ENDMETHOD.
+
+  METHOD parse_ternary.
+    DATA(lr_cond) = parse_or( ).
+    IF peek( )-val = `?`.
+      next( ).
+      DATA(lr_cons) = parse_assign( ).
+      expect( `:` ).
+      DATA(lr_alt) = parse_assign( ).
+      DATA lr_n TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_n.
+      lr_n->kind  = zif_mjs=>c_node_ternary.
+      lr_n->cond  = lr_cond.
+      lr_n->left  = lr_cons.
+      lr_n->right = lr_alt.
+      rr_node = lr_n.
+    ELSE.
+      rr_node = lr_cond.
+    ENDIF.
   ENDMETHOD.
 
   METHOD parse_or.

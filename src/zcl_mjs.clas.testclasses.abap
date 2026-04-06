@@ -60,6 +60,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_negative_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regex_in_class1 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regex_in_class2 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_ternary FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -852,6 +853,30 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |OK| ).
+  ENDMETHOD.
+
+  METHOD test_ternary.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Basic true branch
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(1 ? "yes" : "no")| ) )
+      exp = |yes| ).
+    " Basic false branch
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(0 ? "yes" : "no")| ) )
+      exp = |no| ).
+    " True branch with expression (was broken: ? was silently dropped)
+    DATA(lv_js) =
+      `var msg = "hello";` && lv_nl &&
+      `var y = msg ? msg + ": " : "";` && lv_nl &&
+      `console.log(y);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello:| ).
+    " Nested ternary
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(1 > 0 ? "gt" : "le")| ) )
+      exp = |gt| ).
   ENDMETHOD.
 
 ENDCLASS.

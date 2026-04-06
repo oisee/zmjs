@@ -632,7 +632,8 @@ CLASS zcl_mjs IMPLEMENTATION.
          OR lv_ch = `%` OR lv_ch = `=` OR lv_ch = `<` OR lv_ch = `>`
          OR lv_ch = `!` OR lv_ch = `(` OR lv_ch = `)` OR lv_ch = `,`
          OR lv_ch = `{` OR lv_ch = `}` OR lv_ch = `;` OR lv_ch = `:`
-         OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`.
+         OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`
+         OR lv_ch = `?`.
         CLEAR ls_tok.
         ls_tok-kind = 3.
         ls_tok-val  = lv_ch.
@@ -1252,6 +1253,14 @@ CLASS zcl_mjs IMPLEMENTATION.
               EXIT.
             ENDIF.
           ENDLOOP.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_ternary.
+        DATA(ls_tcond) = eval_node( ir_node = <n>-cond io_env = io_env ).
+        IF is_true( ls_tcond ) = abap_true.
+          rs_val = eval_node( ir_node = <n>-left io_env = io_env ).
+        ELSE.
+          rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
         ENDIF.
 
       WHEN zif_mjs=>c_node_while.
