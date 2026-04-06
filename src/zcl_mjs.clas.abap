@@ -2176,6 +2176,46 @@ CLASS zcl_mjs IMPLEMENTATION.
                 rs_val = string_val( `` ).
               ENDIF.
             ENDIF.
+          WHEN `substr`.
+            IF lines( it_args ) >= 1.
+              DATA ls_sub1 TYPE zif_mjs=>ty_value.
+              DATA ls_sub2 TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_sub1.
+              DATA lv_sub_start TYPE i.
+              DATA lv_sub_len   TYPE i.
+              DATA lv_sub_slen  TYPE i.
+              lv_sub_slen = strlen( is_obj-str ).
+              lv_sub_start = to_number( ls_sub1 ).
+              IF lv_sub_start < 0.
+                lv_sub_start = lv_sub_slen + lv_sub_start.
+                IF lv_sub_start < 0.
+                  lv_sub_start = 0.
+                ENDIF.
+              ELSEIF lv_sub_start > lv_sub_slen.
+                lv_sub_start = lv_sub_slen.
+              ENDIF.
+              IF lines( it_args ) >= 2.
+                READ TABLE it_args INDEX 2 INTO ls_sub2.
+                lv_sub_len = to_number( ls_sub2 ).
+                IF lv_sub_len <= 0.
+                  rs_val = string_val( `` ).
+                  RETURN.
+                ENDIF.
+                IF lv_sub_start + lv_sub_len > lv_sub_slen.
+                  lv_sub_len = lv_sub_slen - lv_sub_start.
+                ENDIF.
+              ELSE.
+                lv_sub_len = lv_sub_slen - lv_sub_start.
+              ENDIF.
+              IF lv_sub_len > 0.
+                DATA(lv_substr_res) = substring( val = is_obj-str
+                                                 off = lv_sub_start
+                                                 len = lv_sub_len ).
+                rs_val = string_val( lv_substr_res ).
+              ELSE.
+                rs_val = string_val( `` ).
+              ENDIF.
+            ENDIF.
           WHEN `charCodeAt`.
             IF lines( it_args ) > 0.
               DATA ls_cca TYPE zif_mjs=>ty_value.
