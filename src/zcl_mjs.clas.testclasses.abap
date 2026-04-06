@@ -25,6 +25,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_template_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_optional_chain FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_optional_chain_arr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_optional_chain_fn FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_substring_one_arg FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_extends FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expression FOR TESTING RAISING zcx_mjs_runtime.
@@ -424,6 +425,21 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |42 undefined| ).
+  ENDMETHOD.
+
+  METHOD test_optional_chain_fn.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const o = {` && lv_nl &&
+      `  method: function() {` && lv_nl &&
+      `    return function() { return 42; };` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `const fn = o.method();` && lv_nl &&
+      `console.log("fn?.(): " + fn?.());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |fn?.(): 42| ).
   ENDMETHOD.
 
   METHOD test_obj_shorthand.
