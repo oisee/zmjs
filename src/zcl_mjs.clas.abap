@@ -1173,7 +1173,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE <n>-op.
           WHEN `-`.
-            rs_val-type = 1. rs_val-num = - to_number( ls_uval ).
+            rs_val-type = 1. rs_val-num = 0 - to_number( ls_uval ).
           WHEN `!`.
             rs_val-type = 3.
             IF is_true( ls_uval ) = abap_false. rs_val-num = 1. ENDIF.
