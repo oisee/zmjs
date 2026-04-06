@@ -1399,6 +1399,92 @@ CLASS zcl_mjs IMPLEMENTATION.
           io_env->ret_val   = lo_for_env->ret_val.
         ENDIF.
 
+      WHEN zif_mjs=>c_node_for_of.
+        DATA(ls_iter) = eval_node( ir_node = <n>-right io_env = io_env ).
+        FIELD-SYMBOLS <nf_of> TYPE zif_mjs=>ty_node.
+        ASSIGN <n>-left->* TO <nf_of>.
+        DATA lv_of_name TYPE string.
+        DATA lv_of_decl TYPE abap_bool.
+        IF <nf_of>-kind = zif_mjs=>c_node_var. " it was let/const/var x
+          lv_of_name = <nf_of>-str.
+          lv_of_decl = abap_true.
+        ELSEIF <nf_of>-kind = zif_mjs=>c_node_ident. " it was x
+          lv_of_name = <nf_of>-str.
+          lv_of_decl = abap_false.
+        ENDIF.
+
+        DATA lv_iter_return TYPE abap_bool VALUE abap_false.
+        DATA lo_iter_env TYPE REF TO zcl_mjs_env.
+
+        IF ls_iter-type = 7 AND ls_iter-arr IS BOUND.
+          LOOP AT ls_iter-arr->items INTO DATA(lr_item).
+            DATA(ls_item_val) = unbox_value( lr_item ).
+            CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
+            lo_iter_env->output = io_env->output.
+
+            IF lv_of_decl = abap_true.
+              lo_iter_env->set( iv_name = lv_of_name is_val = ls_item_val ).
+            ELSE.
+              io_env->set( iv_name = lv_of_name is_val = ls_item_val ).
+            ENDIF.
+
+            LOOP AT <n>-body INTO DATA(lr_ofb).
+              eval_node( ir_node = lr_ofb io_env = lo_iter_env ).
+              IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+
+            IF lo_iter_env->continuing = abap_true.
+              lo_iter_env->continuing = abap_false.
+            ENDIF.
+            IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true.
+              lv_iter_return = lo_iter_env->returning.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+
+        ELSEIF ls_iter-type = 2.
+          DATA(lv_slen) = strlen( ls_iter-str ).
+          DATA lv_si TYPE i VALUE 0.
+          WHILE lv_si < lv_slen.
+            DATA(lv_sch) = ls_iter-str+lv_si(1).
+            lv_si = lv_si + 1.
+            DATA(ls_sch_val) = string_val( lv_sch ).
+
+            CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
+            lo_iter_env->output = io_env->output.
+
+            IF lv_of_decl = abap_true.
+              lo_iter_env->set( iv_name = lv_of_name is_val = ls_sch_val ).
+            ELSE.
+              io_env->set( iv_name = lv_of_name is_val = ls_sch_val ).
+            ENDIF.
+
+            LOOP AT <n>-body INTO DATA(lr_ofbs).
+              eval_node( ir_node = lr_ofbs io_env = lo_iter_env ).
+              IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+
+            IF lo_iter_env->continuing = abap_true.
+              lo_iter_env->continuing = abap_false.
+            ENDIF.
+            IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true.
+              lv_iter_return = lo_iter_env->returning.
+              EXIT.
+            ENDIF.
+          ENDWHILE.
+        ELSE.
+          RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: is not iterable|.
+        ENDIF.
+
+        IF lv_iter_return = abap_true.
+          io_env->returning = abap_true.
+          io_env->ret_val = lo_iter_env->ret_val.
+        ENDIF.
+
       WHEN zif_mjs=>c_node_block.
         LOOP AT <n>-body INTO DATA(lr_bs).
           rs_val = eval_node( ir_node = lr_bs io_env = io_env ).
