@@ -129,9 +129,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     lo_env->define( iv_name = `RangeError`     is_val = undefined_val( ) ).
     lo_env->define( iv_name = `URIError`       is_val = undefined_val( ) ).
     lo_env->define( iv_name = `EvalError`      is_val = undefined_val( ) ).
-    " 'this' and 'arguments' fallbacks: in sloppy-mode plain function calls
-    " these are not bound to a local slot; return undefined rather than ReferenceError.
-    lo_env->define( iv_name = `this`      is_val = undefined_val( ) ).
+    " 'this' at the global scope is the global object (sloppy-mode)
+    lo_env->define( iv_name = `this`      is_val = object_val( ) ).
     lo_env->define( iv_name = `arguments` is_val = undefined_val( ) ).
     " Other JS builtins / keywords that may appear as expressions in partially-parsed code
     lo_env->define( iv_name = `eval`      is_val = undefined_val( ) ).
@@ -810,6 +809,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     IF ir_this IS BOUND.
       ASSIGN ir_this->* TO <this>.
       lo_call_env->define( iv_name = `this` is_val = <this> ).
+    ELSE.
+      " Sloppy-mode plain call: propagate this from the calling scope
+      lo_call_env->define( iv_name = `this` is_val = io_env->get( `this` ) ).
     ENDIF.
 
     " Bind params to slots (fast path: direct index write)

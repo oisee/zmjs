@@ -56,6 +56,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comma_expr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_void FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_plain_call_this FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -775,6 +776,20 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |undefined undefined undefined| ).
+  ENDMETHOD.
+
+  METHOD test_plain_call_this.
+    " In sloppy mode, plain function calls get the global object as 'this'.
+    " Mutating this inside a plain call is visible via the global 'this' reference.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var global = this;` && lv_nl &&
+      `function setFoo() { this.foo = "bar"; }` && lv_nl &&
+      `setFoo();` && lv_nl &&
+      `console.log(global.foo);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |bar| ).
   ENDMETHOD.
 
   METHOD test_comma_expr.
