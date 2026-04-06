@@ -311,6 +311,39 @@ CLASS zcl_mjs IMPLEMENTATION.
             APPEND ls_tok TO rt_tokens.
             lv_i = lv_j.
             CONTINUE.
+          ELSEIF lv_nhc >= `0` AND lv_nhc <= `7`.
+            " Legacy octal literal: 0NNN (non-strict mode ECMAScript)
+            " Scan all consecutive decimal digits first; if any 8/9 found → decimal
+            lv_j = lv_i + 1.
+            DATA lv_has_non_octal TYPE abap_bool VALUE abap_false.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d >= `0` AND lv_d <= `9`.
+                IF lv_d = `8` OR lv_d = `9`.
+                  lv_has_non_octal = abap_true.
+                ENDIF.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            IF lv_has_non_octal = abap_false.
+              " Pure legacy octal: interpret as base-8
+              lv_hexval = 0.
+              DO lv_j - lv_i - 1 TIMES.
+                lv_hk = lv_i + sy-index.
+                lv_hc = iv_src+lv_hk(1).
+                FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                lv_hexval = lv_hexval * 8 + lv_hpos.
+              ENDDO.
+              CLEAR ls_tok.
+              ls_tok-kind = 0.
+              ls_tok-val  = |{ lv_hexval }|.
+              APPEND ls_tok TO rt_tokens.
+              lv_i = lv_j.
+              CONTINUE.
+            ENDIF.
+            " else fall through to decimal parsing
           ENDIF.
         ENDIF.
         " Decimal + optional scientific exponent
@@ -570,7 +603,16 @@ CLASS zcl_mjs IMPLEMENTATION.
           READ TABLE rt_tokens INDEX lv_nptok INTO ls_ptok.
           IF ls_ptok-kind = 0                      " number
              OR ls_ptok-kind = 1                   " string
-             OR ls_ptok-kind = 2                   " identifier
+             OR ( ls_ptok-kind = 2                 " identifier (but not expression-starting keywords)
+                  AND ls_ptok-val <> `return`
+                  AND ls_ptok-val <> `typeof`
+                  AND ls_ptok-val <> `instanceof`
+                  AND ls_ptok-val <> `in`
+                  AND ls_ptok-val <> `of`
+                  AND ls_ptok-val <> `throw`
+                  AND ls_ptok-val <> `case`
+                  AND ls_ptok-val <> `delete`
+                  AND ls_ptok-val <> `void` )
              OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
             lv_rxis = abap_false.
           ENDIF.
@@ -623,7 +665,8 @@ CLASS zcl_mjs IMPLEMENTATION.
          OR lv_ch = `%` OR lv_ch = `=` OR lv_ch = `<` OR lv_ch = `>`
          OR lv_ch = `!` OR lv_ch = `(` OR lv_ch = `)` OR lv_ch = `,`
          OR lv_ch = `{` OR lv_ch = `}` OR lv_ch = `;` OR lv_ch = `:`
-         OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`.
+         OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`
+         OR lv_ch = `?`.
         CLEAR ls_tok.
         ls_tok-kind = 3.
         ls_tok-val  = lv_ch.
@@ -838,8 +881,18 @@ CLASS zcl_mjs IMPLEMENTATION.
         lv_pname = lv_param.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
+      DATA lv_param_idx TYPE i.
+      lv_param_idx = sy-tabix.
       CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
+      " If arg is missing or explicitly undefined, check for a default expression
+      IF ls_pval-type = 0.
+        DATA lr_dflt_node TYPE REF TO data.
+        READ TABLE <fn>-default_params INDEX lv_param_idx INTO lr_dflt_node.
+        IF sy-subrc = 0 AND lr_dflt_node IS BOUND.
+          ls_pval = eval_node( ir_node = lr_dflt_node io_env = lo_call_env ).
+        ENDIF.
+      ENDIF.
       lo_call_env->define( iv_name = lv_pname is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
@@ -1245,6 +1298,14 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDLOOP.
         ENDIF.
 
+      WHEN zif_mjs=>c_node_ternary.
+        DATA(ls_tcond) = eval_node( ir_node = <n>-cond io_env = io_env ).
+        IF is_true( ls_tcond ) = abap_true.
+          rs_val = eval_node( ir_node = <n>-left io_env = io_env ).
+        ELSE.
+          rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
+        ENDIF.
+
       WHEN zif_mjs=>c_node_while.
         DO.
           DATA(ls_wcond) = eval_node( ir_node = <n>-cond io_env = io_env ).
@@ -1464,9 +1525,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         CREATE DATA lr_fn_data TYPE zif_mjs=>ty_function.
         FIELD-SYMBOLS <fn_data> TYPE zif_mjs=>ty_function.
         ASSIGN lr_fn_data->* TO <fn_data>.
-        <fn_data>-name    = <n>-str.
-        <fn_data>-params  = <n>-params.
-        <fn_data>-body    = <n>-body.
+        <fn_data>-name           = <n>-str.
+        <fn_data>-params         = <n>-params.
+        <fn_data>-default_params = <n>-default_params.
+        <fn_data>-body           = <n>-body.
         <fn_data>-closure = io_env.
         DATA ls_fnval TYPE zif_mjs=>ty_value.
         ls_fnval-type = 4.
@@ -1831,15 +1893,33 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val = undefined_val( ).
         ENDIF.
       WHEN 4.
-        IF is_obj-obj IS BOUND.
+        IF iv_prop = `length` AND is_obj-fn IS BOUND.
+          FIELD-SYMBOLS <fn_l> TYPE zif_mjs=>ty_function.
+          ASSIGN is_obj-fn->* TO <fn_l>.
+          DATA lv_fn_length TYPE i VALUE 0.
+          LOOP AT <fn_l>-params INTO DATA(lv_lp).
+            IF strlen( lv_lp ) > 3 AND lv_lp(3) = `...`.
+              EXIT.  " rest parameter — not counted
+            ENDIF.
+            DATA lr_dflt_chk TYPE REF TO data.
+            READ TABLE <fn_l>-default_params INDEX sy-tabix INTO lr_dflt_chk.
+            IF sy-subrc = 0 AND lr_dflt_chk IS BOUND.
+              EXIT.  " first param with default — stop counting
+            ENDIF.
+            lv_fn_length = lv_fn_length + 1.
+          ENDLOOP.
+          rs_val = number_val( CONV f( lv_fn_length ) ).
+        ELSEIF is_obj-obj IS BOUND.
           DATA lr_fn4_pv TYPE REF TO data.
           lr_fn4_pv = is_obj-obj->get( iv_prop ).
           IF lr_fn4_pv IS BOUND.
             rs_val = unbox_value( lr_fn4_pv ).
             RETURN.
           ENDIF.
+          rs_val = undefined_val( ).
+        ELSE.
+          rs_val = undefined_val( ).
         ENDIF.
-        rs_val = undefined_val( ).
       WHEN OTHERS.
         rs_val = undefined_val( ).
     ENDCASE.

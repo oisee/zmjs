@@ -80,20 +80,22 @@ INTERFACE zif_mjs PUBLIC.
     c_node_bool          TYPE i VALUE 25,
     c_node_try           TYPE i VALUE 26,
     c_node_throw         TYPE i VALUE 27,
-    c_node_regex         TYPE i VALUE 28.
+    c_node_regex         TYPE i VALUE 28,
+    c_node_ternary       TYPE i VALUE 29.
 
   " AST Node
   TYPES:
     BEGIN OF ty_node,
-      kind      TYPE i,
-      num       TYPE f,
-      str       TYPE string,
-      op        TYPE string,
-      left      TYPE REF TO data,
-      right     TYPE REF TO data,
-      args      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      body      TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      params    TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      kind          TYPE i,
+      num           TYPE f,
+      str           TYPE string,
+      op            TYPE string,
+      left          TYPE REF TO data,
+      right         TYPE REF TO data,
+      args          TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      body          TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      params        TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      default_params TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       cond      TYPE REF TO data,
       els       TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       init      TYPE REF TO data,
@@ -113,6 +115,7 @@ INTERFACE zif_mjs PUBLIC.
     BEGIN OF ty_function,
       name            TYPE string,
       params          TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      default_params  TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       body            TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       closure         TYPE REF TO object,
       " Slot optimization: populated once on first call (lazy compile)

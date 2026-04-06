@@ -45,6 +45,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_func_hoist FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_legacy_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
@@ -58,7 +59,11 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_void FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_plain_call_this FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_negative_literal FOR TESTING RAISING zcx_mjs_runtime.
-    METHODS test_regex_in_class FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regex_in_class1 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regex_in_class2 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_ternary FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_dflt_params FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_length FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -698,6 +703,19 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |0 7 8 15 255| ).
   ENDMETHOD.
 
+  METHOD test_legacy_octal_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(00);`   && lv_nl &&
+      `console.log(07);`   && lv_nl &&
+      `console.log(070);`  && lv_nl &&
+      `console.log(077);`  && lv_nl &&
+      `console.log(0377);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 7 56 63 255| ).
+  ENDMETHOD.
+
   METHOD test_comment.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     DATA(lv_js) =
@@ -828,7 +846,7 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |2| ).
   ENDMETHOD.
 
-  METHOD test_regex_in_class.
+  METHOD test_regex_in_class1.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     DATA(lv_js) =
       `var F = class {` && lv_nl &&
@@ -838,6 +856,107 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |OK| ).
+  ENDMETHOD.
+
+  METHOD test_regex_in_class2.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var F = class {` && lv_nl &&
+      `  m() { return /a+/; }` && lv_nl &&
+      `};` && lv_nl &&
+      `// c` && lv_nl &&
+      `console.log("OK");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |OK| ).
+  ENDMETHOD.
+
+  METHOD test_dflt_params.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Missing arg uses default
+    DATA(lv_js) =
+      `function greet(name, msg = "hello") { return msg + " " + name; }` && lv_nl &&
+      `console.log(greet("world"));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello world| ).
+    " Explicit undefined uses default
+    lv_js =
+      `function f(a, b = 42) { return b; }` && lv_nl &&
+      `console.log(f(1, undefined));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
+    " Explicit value overrides default
+    lv_js =
+      `function f(a = 10) { return a; }` && lv_nl &&
+      `console.log(f(99));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |99| ).
+  ENDMETHOD.
+
+  METHOD test_function_length.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Basic: required params only
+    DATA(lv_js) =
+      `function f(a, b, c) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `3` ).
+    " Trailing comma does not add a phantom param
+    lv_js =
+      `function f(a,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `1` ).
+    " Multiple params with trailing comma
+    lv_js =
+      `function f(a, b,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2` ).
+    " Params before first default count; default and trailing comma excluded
+    lv_js =
+      `function f(a, b = 39,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `1` ).
+    " All-default params: length = 0
+    lv_js =
+      `function f(x = 42) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `0` ).
+  ENDMETHOD.
+
+  METHOD test_ternary.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Basic true branch
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(1 ? "yes" : "no")| ) )
+      exp = |yes| ).
+    " Basic false branch
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(0 ? "yes" : "no")| ) )
+      exp = |no| ).
+    " True branch with expression (was broken: ? was silently dropped)
+    DATA(lv_js) =
+      `var msg = "hello";` && lv_nl &&
+      `var y = msg ? msg + ": " : "";` && lv_nl &&
+      `console.log(y);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello:| ).
+    " Nested ternary
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log(1 > 0 ? "gt" : "le")| ) )
+      exp = |gt| ).
   ENDMETHOD.
 
 ENDCLASS.
