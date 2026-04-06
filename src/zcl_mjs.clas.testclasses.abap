@@ -69,6 +69,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_for_const_of FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_of_undef_or_arr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_of_map FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_substr FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1027,6 +1028,20 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |done| ).
+  ENDMETHOD.
+
+  METHOD test_substr.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("abcdefghij".substr(1, 2));` && lv_nl &&
+      `console.log("abcdefghij".substr(-3, 2));` && lv_nl &&
+      `console.log("abcdefghij".substr(-3));` && lv_nl &&
+      `console.log("abcdefghij".substr(1));` && lv_nl &&
+      `console.log("abcdefghij".substr(-20, 2));` && lv_nl &&
+      `console.log("abcdefghij".substr(20, 2));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |bc hi hij bcdefghij ab| ).
   ENDMETHOD.
 
 ENDCLASS.
