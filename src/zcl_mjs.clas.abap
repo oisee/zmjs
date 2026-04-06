@@ -311,6 +311,39 @@ CLASS zcl_mjs IMPLEMENTATION.
             APPEND ls_tok TO rt_tokens.
             lv_i = lv_j.
             CONTINUE.
+          ELSEIF lv_nhc >= `0` AND lv_nhc <= `7`.
+            " Legacy octal literal: 0NNN (non-strict mode ECMAScript)
+            " Scan all consecutive decimal digits first; if any 8/9 found → decimal
+            lv_j = lv_i + 1.
+            DATA lv_has_non_octal TYPE abap_bool VALUE abap_false.
+            WHILE lv_j < lv_len.
+              lv_d = iv_src+lv_j(1).
+              IF lv_d >= `0` AND lv_d <= `9`.
+                IF lv_d = `8` OR lv_d = `9`.
+                  lv_has_non_octal = abap_true.
+                ENDIF.
+                lv_j = lv_j + 1.
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            IF lv_has_non_octal = abap_false.
+              " Pure legacy octal: interpret as base-8
+              lv_hexval = 0.
+              DO lv_j - lv_i - 1 TIMES.
+                lv_hk = lv_i + sy-index.
+                lv_hc = iv_src+lv_hk(1).
+                FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                lv_hexval = lv_hexval * 8 + lv_hpos.
+              ENDDO.
+              CLEAR ls_tok.
+              ls_tok-kind = 0.
+              ls_tok-val  = |{ lv_hexval }|.
+              APPEND ls_tok TO rt_tokens.
+              lv_i = lv_j.
+              CONTINUE.
+            ENDIF.
+            " else fall through to decimal parsing
           ENDIF.
         ENDIF.
         " Decimal + optional scientific exponent

@@ -45,6 +45,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_func_hoist FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_binary_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_legacy_octal_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comment FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_iife FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_named_func_expr_scope FOR TESTING RAISING zcx_mjs_runtime.
@@ -698,6 +699,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |0 7 8 15 255| ).
+  ENDMETHOD.
+
+  METHOD test_legacy_octal_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(00);`   && lv_nl &&
+      `console.log(07);`   && lv_nl &&
+      `console.log(070);`  && lv_nl &&
+      `console.log(077);`  && lv_nl &&
+      `console.log(0377);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |0 7 56 63 255| ).
   ENDMETHOD.
 
   METHOD test_comment.
