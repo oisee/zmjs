@@ -66,6 +66,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_dflt_params FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_length FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_line_cont FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_for_const_of FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -993,6 +994,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js3 ) )
       exp = |true| ).
+  ENDMETHOD.
+
+  METHOD test_for_const_of.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let sum = 0;` && lv_nl &&
+      `for (const x of [10, 20, 30]) {` && lv_nl &&
+      `  sum = sum + x;` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(sum);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |60| ).
   ENDMETHOD.
 
 ENDCLASS.

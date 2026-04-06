@@ -81,7 +81,8 @@ INTERFACE zif_mjs PUBLIC.
     c_node_try           TYPE i VALUE 26,
     c_node_throw         TYPE i VALUE 27,
     c_node_regex         TYPE i VALUE 28,
-    c_node_ternary       TYPE i VALUE 29.
+    c_node_ternary       TYPE i VALUE 29,
+    c_node_for_of        TYPE i VALUE 30.
 
   " AST Node
   TYPES:

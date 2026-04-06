@@ -310,10 +310,24 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_init = parse_var( ).
     ELSEIF lv_pv <> `;`.
       lr_init = parse_expr( ).
-      IF peek( )-val = `;`.
-        next( ).
-      ENDIF.
     ELSE.
+      next( ).
+    ENDIF.
+    IF peek( )-val = `of`.
+      next( ).
+      DATA(lr_right) = parse_expr( ).
+      expect( `)` ).
+      DATA(lt_body_of) = parse_body( ).
+      DATA lr_n_of TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_n_of.
+      lr_n_of->kind  = zif_mjs=>c_node_for_of.
+      lr_n_of->left  = lr_init.
+      lr_n_of->right = lr_right.
+      lr_n_of->body  = lt_body_of.
+      rr_node = lr_n_of.
+      RETURN.
+    ENDIF.
+    IF peek( )-val = `;`.
       next( ).
     ENDIF.
     DATA lr_cond TYPE REF TO data.
