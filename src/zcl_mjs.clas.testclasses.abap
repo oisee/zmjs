@@ -68,6 +68,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_line_cont FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_const_of FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_of_undef_or_arr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_for_of_map FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1012,6 +1013,17 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD test_for_of_undef_or_arr.
     DATA(lv_js) = `for (let x of undefined || []) { console.log(x); } console.log("done");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |done| ).
+  ENDMETHOD.
+
+  METHOD test_for_of_map.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const wa = [].map(x => x);` && lv_nl &&
+      `for (const w of wa) { console.log(w); }` && lv_nl &&
+      `console.log("done");`.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |done| ).
