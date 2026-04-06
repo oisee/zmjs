@@ -493,7 +493,8 @@ CLASS zcl_mjs IMPLEMENTATION.
           CONTINUE.
         ENDIF.
         IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
-           OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`.
+           OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`
+           OR lv_two = `=>`.
           IF lv_i + 2 < lv_len AND
              ( lv_two = `==` OR lv_two = `!=` ).
             lv_three = iv_src+lv_i(3).
