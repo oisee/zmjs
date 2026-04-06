@@ -841,6 +841,25 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_ba->object    = lr_left.
         lr_ba->prop_expr = lr_idx.
         lr_left = lr_ba.
+      ELSEIF peek( )-val = `?.` AND peek( iv_offset = 1 )-val = `(`.
+        next( ).
+        next( ).
+        DATA lt_eoargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+        CLEAR lt_eoargs.
+        WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+          APPEND parse_expr( ) TO lt_eoargs.
+          IF peek( )-val = `,`.
+            next( ).
+          ENDIF.
+        ENDWHILE.
+        expect( `)` ).
+        DATA lr_eoc TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_eoc.
+        lr_eoc->kind = zif_mjs=>c_node_call.
+        lr_eoc->op   = `?.`.
+        lr_eoc->left = lr_left.
+        lr_eoc->args = lt_eoargs.
+        lr_left = lr_eoc.
       ELSEIF peek( )-val = `?.`.
         next( ).
         IF peek( )-val = `[`.
@@ -885,25 +904,6 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
             lr_left = lr_oma.
           ENDIF.
         ENDIF.
-      ELSEIF peek( )-val = `?.` AND peek( iv_offset = 1 )-val = `(`.
-        next( ).
-        next( ).
-        DATA lt_eoargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-        CLEAR lt_eoargs.
-        WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-          APPEND parse_expr( ) TO lt_eoargs.
-          IF peek( )-val = `,`.
-            next( ).
-          ENDIF.
-        ENDWHILE.
-        expect( `)` ).
-        DATA lr_eoc TYPE REF TO zif_mjs=>ty_node.
-        CREATE DATA lr_eoc.
-        lr_eoc->kind = zif_mjs=>c_node_call.
-        lr_eoc->op   = `?.`.
-        lr_eoc->left = lr_left.
-        lr_eoc->args = lt_eoargs.
-        lr_left = lr_eoc.
       ELSEIF peek( )-val = `(` AND lr_left IS BOUND.
         FIELD-SYMBOLS <ln> TYPE zif_mjs=>ty_node.
         ASSIGN lr_left->* TO <ln>.
