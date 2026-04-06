@@ -1574,6 +1574,25 @@ CLASS zcl_mjs IMPLEMENTATION.
         rs_val = array_val( lt_arr_refs ).
 
       WHEN zif_mjs=>c_node_member_access.
+        " Intercept Object built-in methods accessed as first-class values (e.g. var f = Object.defineProperty)
+        IF <n>-object IS BOUND.
+          FIELD-SYMBOLS <ma_oi> TYPE zif_mjs=>ty_node.
+          ASSIGN <n>-object->* TO <ma_oi>.
+          IF sy-subrc = 0 AND <ma_oi>-kind = zif_mjs=>c_node_ident AND <ma_oi>-str = `Object`.
+            IF <n>-property = `keys` OR <n>-property = `defineProperty`.
+              DATA lr_obj_mafn TYPE REF TO data.
+              CREATE DATA lr_obj_mafn TYPE zif_mjs=>ty_function.
+              FIELD-SYMBOLS <obj_mafn> TYPE zif_mjs=>ty_function.
+              ASSIGN lr_obj_mafn->* TO <obj_mafn>.
+              <obj_mafn>-name = <n>-property.
+              DATA ls_obj_mafnval TYPE zif_mjs=>ty_value.
+              ls_obj_mafnval-type = 4.
+              ls_obj_mafnval-fn   = lr_obj_mafn.
+              rs_val = ls_obj_mafnval.
+              RETURN.
+            ENDIF.
+          ENDIF.
+        ENDIF.
         DATA(ls_paobj) = eval_node( ir_node = <n>-object io_env = io_env ).
         IF <n>-op = `?.` AND ( ls_paobj-type = 0 OR ls_paobj-type = 5 ).
           rs_val = undefined_val( ).
