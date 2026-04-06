@@ -1175,6 +1175,8 @@ CLASS zcl_mjs IMPLEMENTATION.
           WHEN `!`.
             rs_val-type = 3.
             IF is_true( ls_uval ) = abap_false. rs_val-num = 1. ENDIF.
+          WHEN `void`.
+            " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
 
       WHEN zif_mjs=>c_node_assign.

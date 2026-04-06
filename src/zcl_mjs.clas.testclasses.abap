@@ -55,6 +55,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_defprop_assign FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comma_expr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_void FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -763,6 +764,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |5| ).
+  ENDMETHOD.
+
+  METHOD test_void.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(void 0);` && lv_nl &&
+      `console.log(void "hello");` && lv_nl &&
+      `console.log(typeof void 0);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |undefined undefined undefined| ).
   ENDMETHOD.
 
   METHOD test_comma_expr.
