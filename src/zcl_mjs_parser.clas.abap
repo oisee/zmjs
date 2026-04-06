@@ -332,7 +332,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       next( ).
     ENDIF.
     DATA lr_cond TYPE REF TO data.
-    IF peek( )-val <> `;`.
+    IF peek( )-val <> `;` AND peek( )-val <> `)`.
       lr_cond = parse_expr( ).
     ENDIF.
     IF peek( )-val = `;`.
