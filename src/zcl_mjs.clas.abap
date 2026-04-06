@@ -881,8 +881,18 @@ CLASS zcl_mjs IMPLEMENTATION.
         lv_pname = lv_param.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
+      DATA lv_param_idx TYPE i.
+      lv_param_idx = sy-tabix.
       CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
+      " If arg is missing or explicitly undefined, check for a default expression
+      IF ls_pval-type = 0.
+        DATA lr_dflt_node TYPE REF TO data.
+        READ TABLE <fn>-default_params INDEX lv_param_idx INTO lr_dflt_node.
+        IF sy-subrc = 0 AND lr_dflt_node IS BOUND.
+          ls_pval = eval_node( ir_node = lr_dflt_node io_env = lo_call_env ).
+        ENDIF.
+      ENDIF.
       lo_call_env->define( iv_name = lv_pname is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
@@ -1515,9 +1525,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         CREATE DATA lr_fn_data TYPE zif_mjs=>ty_function.
         FIELD-SYMBOLS <fn_data> TYPE zif_mjs=>ty_function.
         ASSIGN lr_fn_data->* TO <fn_data>.
-        <fn_data>-name    = <n>-str.
-        <fn_data>-params  = <n>-params.
-        <fn_data>-body    = <n>-body.
+        <fn_data>-name           = <n>-str.
+        <fn_data>-params         = <n>-params.
+        <fn_data>-default_params = <n>-default_params.
+        <fn_data>-body           = <n>-body.
         <fn_data>-closure = io_env.
         DATA ls_fnval TYPE zif_mjs=>ty_value.
         ls_fnval-type = 4.

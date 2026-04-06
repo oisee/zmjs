@@ -62,6 +62,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_regex_in_class1 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regex_in_class2 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_ternary FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_dflt_params FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -867,6 +868,31 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |OK| ).
+  ENDMETHOD.
+
+  METHOD test_dflt_params.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Missing arg uses default
+    DATA(lv_js) =
+      `function greet(name, msg = "hello") { return msg + " " + name; }` && lv_nl &&
+      `console.log(greet("world"));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello world| ).
+    " Explicit undefined uses default
+    lv_js =
+      `function f(a, b = 42) { return b; }` && lv_nl &&
+      `console.log(f(1, undefined));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |42| ).
+    " Explicit value overrides default
+    lv_js =
+      `function f(a = 10) { return a; }` && lv_nl &&
+      `console.log(f(99));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |99| ).
   ENDMETHOD.
 
   METHOD test_ternary.

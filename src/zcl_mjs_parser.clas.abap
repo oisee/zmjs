@@ -456,8 +456,26 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     ENDIF.
     expect( `(` ).
     DATA lt_params TYPE STANDARD TABLE OF string WITH DEFAULT KEY.
+    DATA lt_default_params TYPE zif_mjs=>tt_nodes.
     WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-      APPEND next( )-val TO lt_params.
+      DATA lv_tok TYPE string.
+      IF peek( )-val = `...`.
+        next( ).
+        lv_tok = `...` && next( )-val.
+      ELSE.
+        lv_tok = next( )-val.
+      ENDIF.
+      APPEND lv_tok TO lt_params.
+      IF peek( )-val = `=`.
+        next( ).
+        DATA lr_dflt TYPE REF TO data.
+        lr_dflt = parse_assign( ).
+        APPEND lr_dflt TO lt_default_params.
+      ELSE.
+        DATA lr_no_dflt TYPE REF TO data.
+        CLEAR lr_no_dflt.
+        APPEND lr_no_dflt TO lt_default_params.
+      ENDIF.
       IF peek( )-val = `,`.
         next( ).
       ENDIF.
@@ -466,10 +484,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA(lt_body) = parse_body( ).
     DATA lr_n TYPE REF TO zif_mjs=>ty_node.
     CREATE DATA lr_n.
-    lr_n->kind   = zif_mjs=>c_node_func_decl.
-    lr_n->str    = lv_name.
-    lr_n->params = lt_params.
-    lr_n->body   = lt_body.
+    lr_n->kind           = zif_mjs=>c_node_func_decl.
+    lr_n->str            = lv_name.
+    lr_n->params         = lt_params.
+    lr_n->default_params = lt_default_params.
+    lr_n->body           = lt_body.
     rr_node = lr_n.
   ENDMETHOD.
 
