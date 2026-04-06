@@ -964,17 +964,17 @@ CLASS ltcl_test IMPLEMENTATION.
     " Backslash + line terminator inside a string literal = line continuation (produces nothing)
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     " "\<LF>x" === "x"
-    DATA(lv_js) = `console.log("\\` && lv_nl && `x" === "x");`.
+    DATA(lv_js) = `console.log("\` && lv_nl && `x" === "x");`.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |true| ).
     " "a\<LF>b" === "ab"
-    DATA(lv_js2) = `console.log("a\\` && lv_nl && `b" === "ab");`.
+    DATA(lv_js2) = `console.log("a\` && lv_nl && `b" === "ab");`.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js2 ) )
       exp = |true| ).
     " Empty line continuation: "\<LF>" === ""
-    DATA(lv_js3) = `console.log("\\` && lv_nl && `" === "");`.
+    DATA(lv_js3) = `console.log("\` && lv_nl && `" === "");`.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js3 ) )
       exp = |true| ).
