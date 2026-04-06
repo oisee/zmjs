@@ -63,6 +63,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_regex_in_class2 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_ternary FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_dflt_params FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_length FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -893,6 +894,45 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |99| ).
+  ENDMETHOD.
+
+  METHOD test_function_length.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " Basic: required params only
+    DATA(lv_js) =
+      `function f(a, b, c) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `3` ).
+    " Trailing comma does not add a phantom param
+    lv_js =
+      `function f(a,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `1` ).
+    " Multiple params with trailing comma
+    lv_js =
+      `function f(a, b,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2` ).
+    " Params before first default count; default and trailing comma excluded
+    lv_js =
+      `function f(a, b = 39,) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `1` ).
+    " All-default params: length = 0
+    lv_js =
+      `function f(x = 42) {}` && lv_nl &&
+      `console.log(f.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `0` ).
   ENDMETHOD.
 
   METHOD test_ternary.

@@ -1893,15 +1893,33 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val = undefined_val( ).
         ENDIF.
       WHEN 4.
-        IF is_obj-obj IS BOUND.
+        IF iv_prop = `length` AND is_obj-fn IS BOUND.
+          FIELD-SYMBOLS <fn_l> TYPE zif_mjs=>ty_function.
+          ASSIGN is_obj-fn->* TO <fn_l>.
+          DATA lv_fn_length TYPE i VALUE 0.
+          LOOP AT <fn_l>-params INTO DATA(lv_lp).
+            IF strlen( lv_lp ) > 3 AND lv_lp(3) = `...`.
+              EXIT.  " rest parameter — not counted
+            ENDIF.
+            DATA lr_dflt_chk TYPE REF TO data.
+            READ TABLE <fn_l>-default_params INDEX sy-tabix INTO lr_dflt_chk.
+            IF sy-subrc = 0 AND lr_dflt_chk IS BOUND.
+              EXIT.  " first param with default — stop counting
+            ENDIF.
+            lv_fn_length = lv_fn_length + 1.
+          ENDLOOP.
+          rs_val = number_val( CONV f( lv_fn_length ) ).
+        ELSEIF is_obj-obj IS BOUND.
           DATA lr_fn4_pv TYPE REF TO data.
           lr_fn4_pv = is_obj-obj->get( iv_prop ).
           IF lr_fn4_pv IS BOUND.
             rs_val = unbox_value( lr_fn4_pv ).
             RETURN.
           ENDIF.
+          rs_val = undefined_val( ).
+        ELSE.
+          rs_val = undefined_val( ).
         ENDIF.
-        rs_val = undefined_val( ).
       WHEN OTHERS.
         rs_val = undefined_val( ).
     ENDCASE.
