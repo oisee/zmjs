@@ -1562,12 +1562,23 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-left IS BOUND.
           DATA ls_efn TYPE zif_mjs=>ty_value.
           ls_efn = eval_node( ir_node = <n>-left io_env = io_env ).
+          IF <n>-op = `?.` AND ( ls_efn-type = 0 OR ls_efn-type = 5 ).
+            rs_val = undefined_val( ).
+            RETURN.
+          ENDIF.
           IF ls_efn-type = 4 AND ls_efn-fn IS BOUND.
             DATA lt_iife_args TYPE zif_mjs=>tt_value_slots.
             LOOP AT <n>-args INTO DATA(lr_iife_arg).
               APPEND eval_node( ir_node = lr_iife_arg io_env = io_env ) TO lt_iife_args.
             ENDLOOP.
+            " If this is an expression call on a member (e.g. o.fn()), propagate this.
+            " But for now, just a plain call is fine.
             rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_iife_args io_env = io_env ).
+          ELSEIF <n>-op = `?.`.
+            rs_val = undefined_val( ).
+          ELSE.
+            " not a function? maybe should throw, but returning undefined is safer for now if it's optional
+            rs_val = undefined_val( ).
           ENDIF.
           RETURN.
         ENDIF.
