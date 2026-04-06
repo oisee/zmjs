@@ -61,9 +61,11 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_negative_literal FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regex_in_class1 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regex_in_class2 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regex_in_class3 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_ternary FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_dflt_params FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_length FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_line_cont FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -871,6 +873,20 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |OK| ).
   ENDMETHOD.
 
+  METHOD test_regex_in_class3.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+* this regex is invalid? but anyhow, should tokenize okay
+    DATA(lv_js) =
+      `var F = class {` && lv_nl &&
+      `  m() { return /[x/]+$/; }` && lv_nl &&
+      `};` && lv_nl &&
+      `// comment` && lv_nl &&
+      `console.log("OK");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |OK| ).
+  ENDMETHOD.
+
   METHOD test_dflt_params.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     " Missing arg uses default
@@ -957,6 +973,26 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( |console.log(1 > 0 ? "gt" : "le")| ) )
       exp = |gt| ).
+  ENDMETHOD.
+
+  METHOD test_string_line_cont.
+    " Backslash + line terminator inside a string literal = line continuation (produces nothing)
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " "\<LF>x" === "x"
+    DATA(lv_js) = `console.log("\` && lv_nl && `x" === "x");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |true| ).
+    " "a\<LF>b" === "ab"
+    DATA(lv_js2) = `console.log("a\` && lv_nl && `b" === "ab");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js2 ) )
+      exp = |true| ).
+    " Empty line continuation: "\<LF>" === ""
+    DATA(lv_js3) = `console.log("\` && lv_nl && `" === "");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js3 ) )
+      exp = |true| ).
   ENDMETHOD.
 
 ENDCLASS.
