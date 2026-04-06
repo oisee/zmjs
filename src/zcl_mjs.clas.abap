@@ -129,9 +129,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     lo_env->define( iv_name = `RangeError`     is_val = undefined_val( ) ).
     lo_env->define( iv_name = `URIError`       is_val = undefined_val( ) ).
     lo_env->define( iv_name = `EvalError`      is_val = undefined_val( ) ).
-    " 'this' and 'arguments' fallbacks: in sloppy-mode plain function calls
-    " these are not bound to a local slot; return undefined rather than ReferenceError.
-    lo_env->define( iv_name = `this`      is_val = undefined_val( ) ).
+    " 'this' at the global scope is the global object (sloppy-mode)
+    lo_env->define( iv_name = `this`      is_val = object_val( ) ).
     lo_env->define( iv_name = `arguments` is_val = undefined_val( ) ).
     " Other JS builtins / keywords that may appear as expressions in partially-parsed code
     lo_env->define( iv_name = `eval`      is_val = undefined_val( ) ).
@@ -810,6 +809,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     IF ir_this IS BOUND.
       ASSIGN ir_this->* TO <this>.
       lo_call_env->define( iv_name = `this` is_val = <this> ).
+    ELSE.
+      " Sloppy-mode plain call: propagate this from the calling scope
+      lo_call_env->define( iv_name = `this` is_val = io_env->get( `this` ) ).
     ENDIF.
 
     " Bind params to slots (fast path: direct index write)
@@ -1171,10 +1173,12 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE <n>-op.
           WHEN `-`.
-            rs_val-type = 1. rs_val-num = - to_number( ls_uval ).
+            rs_val-type = 1. rs_val-num = 0 - to_number( ls_uval ).
           WHEN `!`.
             rs_val-type = 3.
             IF is_true( ls_uval ) = abap_false. rs_val-num = 1. ENDIF.
+          WHEN `void`.
+            " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
 
       WHEN zif_mjs=>c_node_assign.

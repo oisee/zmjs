@@ -695,6 +695,17 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_to.
       RETURN.
     ENDIF.
+    IF peek( )-val = `void` AND peek( )-kind = 2.
+      next( ).
+      DATA(lr_void_ex) = parse_unary( ).
+      DATA lr_void_n TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_void_n.
+      lr_void_n->kind = zif_mjs=>c_node_unaryop.
+      lr_void_n->op   = `void`.
+      lr_void_n->left = lr_void_ex.
+      rr_node = lr_void_n.
+      RETURN.
+    ENDIF.
     IF peek( )-val = `new` AND peek( )-kind = 2.
       next( ).
       DATA(lr_c_expr) = parse_primary( ).

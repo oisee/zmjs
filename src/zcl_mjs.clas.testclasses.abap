@@ -55,6 +55,10 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_defprop_assign FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comma_expr FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_void FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_plain_call_this FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_negative_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regex_in_class FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -765,6 +769,46 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |5| ).
   ENDMETHOD.
 
+  METHOD test_void.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log(void 0);` && lv_nl &&
+      `console.log(void "hello");` && lv_nl &&
+      `console.log(typeof void 0);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |undefined undefined undefined| ).
+  ENDMETHOD.
+
+  METHOD test_plain_call_this.
+    " In sloppy mode, plain function calls get the global object as 'this'.
+    " Mutating this inside a plain call is visible via the global 'this' reference.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var global = this;` && lv_nl &&
+      `function setFoo() { this.foo = "bar"; }` && lv_nl &&
+      `setFoo();` && lv_nl &&
+      `console.log(global.foo);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |bar| ).
+  ENDMETHOD.
+
+  METHOD test_negative_literal.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var a = -1;` && lv_nl &&
+      `var b = 0 - 1;` && lv_nl &&
+      `console.log(a);` && lv_nl &&
+      `console.log(b);` && lv_nl &&
+      `console.log(a === -1);` && lv_nl &&
+      `console.log(b === -1);` && lv_nl &&
+      `console.log(a === b);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |-1 -1 true true true| ).
+  ENDMETHOD.
+
   METHOD test_comma_expr.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     " comma expression in grouping returns last value
@@ -782,6 +826,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2| ).
+  ENDMETHOD.
+
+  METHOD test_regex_in_class.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var F = class {` && lv_nl &&
+      `  m() { return /a+/; }` && lv_nl &&
+      `};` && lv_nl &&
+      `console.log("OK");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |OK| ).
   ENDMETHOD.
 
 ENDCLASS.
