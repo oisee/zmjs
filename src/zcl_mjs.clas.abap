@@ -2076,6 +2076,35 @@ CLASS zcl_mjs IMPLEMENTATION.
               is_obj-arr->push( box_value( ls_push_arg ) ).
               rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
             ENDIF.
+          WHEN `map`.
+            IF lines( it_args ) > 0.
+              DATA ls_map_cb TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_map_cb.
+              IF ls_map_cb-type = 4 AND ls_map_cb-fn IS BOUND.
+                DATA lo_map_arr TYPE REF TO zcl_mjs_arr.
+                CREATE OBJECT lo_map_arr.
+                DATA lv_map_idx TYPE i VALUE 0.
+                LOOP AT is_obj-arr->items INTO DATA(lr_map_item).
+                  DATA ls_map_elem TYPE zif_mjs=>ty_value.
+                  ls_map_elem = unbox_value( lr_map_item ).
+                  DATA lt_map_args TYPE zif_mjs=>tt_value_slots.
+                  CLEAR lt_map_args.
+                  APPEND ls_map_elem TO lt_map_args.
+                  APPEND number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
+                  APPEND is_obj TO lt_map_args.
+                  DATA(ls_map_result) = call_function(
+                    ir_fn   = ls_map_cb-fn
+                    it_args = lt_map_args
+                    io_env  = io_env ).
+                  lo_map_arr->push( box_value( ls_map_result ) ).
+                  lv_map_idx = lv_map_idx + 1.
+                ENDLOOP.
+                rs_val-type = 7.
+                rs_val-arr = lo_map_arr.
+              ENDIF.
+            ELSE.
+              rs_val = array_val( VALUE #( ) ).
+            ENDIF.
           WHEN OTHERS.
           " todo, throw?
         ENDCASE.
