@@ -58,6 +58,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_void FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_plain_call_this FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_negative_literal FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regex_in_class FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -825,6 +826,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2| ).
+  ENDMETHOD.
+
+  METHOD test_regex_in_class.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var F = class {` && lv_nl &&
+      `  m() { return /a+/; }` && lv_nl &&
+      `};` && lv_nl &&
+      `console.log("OK");`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |OK| ).
   ENDMETHOD.
 
 ENDCLASS.
