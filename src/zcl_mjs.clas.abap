@@ -648,13 +648,19 @@ CLASS zcl_mjs IMPLEMENTATION.
           DATA lv_rxflg  TYPE string.
           DATA lv_rxch   TYPE c LENGTH 1.
           DATA lv_rxfc   TYPE c LENGTH 1.
+          DATA lv_rxclass TYPE abap_bool VALUE abap_false.
           CLEAR lv_rxpat.
           CLEAR lv_rxflg.
           lv_j = lv_i + 1.
           WHILE lv_j < lv_len.
             lv_rxch = iv_src+lv_j(1).
-            IF lv_rxch = `/`.
+            IF lv_rxch = `/` AND lv_rxclass = abap_false.
               EXIT.
+            ENDIF.
+            IF lv_rxch = `[` AND lv_rxclass = abap_false.
+              lv_rxclass = abap_true.
+            ELSEIF lv_rxch = `]` AND lv_rxclass = abap_true.
+              lv_rxclass = abap_false.
             ENDIF.
             IF lv_rxch = `\` AND lv_j + 1 < lv_len.
               lv_rxpat = lv_rxpat && `\`.
