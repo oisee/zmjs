@@ -53,6 +53,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_object_keys FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_object_define_property FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_defprop_assign FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -751,6 +752,16 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( |console.log(typeof e1)| ) )
       exp = |undefined| ).
+  ENDMETHOD.
+
+  METHOD test_arrow_function.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var add = (a, b) => a + b;` && lv_nl &&
+      `console.log(add(3, 2));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |5| ).
   ENDMETHOD.
 
 
