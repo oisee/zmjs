@@ -962,8 +962,22 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       pos = lv_saved_pos.
       next( ).
       DATA(lr_expr) = parse_expr( ).
+      IF peek( )-val = `,`.
+        DATA lt_grp_seq TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+        APPEND lr_expr TO lt_grp_seq.
+        WHILE peek( )-val = `,`.
+          next( ).
+          APPEND parse_expr( ) TO lt_grp_seq.
+        ENDWHILE.
+        DATA lr_grp_node TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_grp_node.
+        lr_grp_node->kind = zif_mjs=>c_node_block.
+        lr_grp_node->body = lt_grp_seq.
+        rr_node = lr_grp_node.
+      ELSE.
+        rr_node = lr_expr.
+      ENDIF.
       expect( `)` ).
-      rr_node = lr_expr.
       RETURN.
     ENDIF.
 

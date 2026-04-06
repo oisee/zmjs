@@ -54,6 +54,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_object_define_property FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_defprop_assign FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_comma_expr FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -764,5 +765,23 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |5| ).
   ENDMETHOD.
 
+  METHOD test_comma_expr.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    " comma expression in grouping returns last value
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |var x = (1 + 1, 10 + 5); console.log(x);| ) )
+      exp = |15| ).
+    " comma expression prevents infinite loop in for-loop condition
+    DATA(lv_js) =
+      `var run = true;` && lv_nl &&
+      `var i = 0;` && lv_nl &&
+      `for (; run && (i = i + 1, i < 3); ) {` && lv_nl &&
+      `  if (i >= 2) { run = false; }` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(i);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2| ).
+  ENDMETHOD.
 
 ENDCLASS.
