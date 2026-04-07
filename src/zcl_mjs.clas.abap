@@ -128,6 +128,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
     DATA(ls_obj_builtin) = object_val( ).
     lo_env->define( iv_name = `Object`         is_val = ls_obj_builtin ).
+    lo_env->define( iv_name = `Set`            is_val = undefined_val( ) ).
     lo_env->define( iv_name = `RegExp`         is_val = undefined_val( ) ).
     lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
     lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
@@ -2112,6 +2113,11 @@ CLASS zcl_mjs IMPLEMENTATION.
               IF lv_new_flags CS `i`. lv_new_rx_fn = lv_new_rx_fn + 2. ENDIF.
               rs_val-num = lv_new_rx_fn.
             ENDIF.
+            RETURN.
+          ELSEIF lv_cls_name = `Set`.
+            rs_val = object_val( ).
+            " TODO: Implement Set properly if needed. For now, just return an object.
+            " This satisfies 'new Set()' without throwing ReferenceError.
             RETURN.
           ENDIF.
           ls_cls = io_env->get( lv_cls_name ).

@@ -93,6 +93,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_spread FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_regexp FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_new_set FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -743,6 +744,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |result: X| )
       msg = |new RegExp constructor result mismatch: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_new_set.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const s = new Set();` && lv_nl &&
+      `console.log("result: " + typeof s);`.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |result: object| )
+      msg = |new Set() constructor result mismatch: { lv_r }| ).
   ENDMETHOD.
 
   METHOD test262.
