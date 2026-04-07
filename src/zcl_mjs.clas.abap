@@ -2379,8 +2379,20 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val = array_val( lt_removed ).
             RETURN.
           WHEN `sort`.
-            " rudimentary sort for tests
-            SORT is_obj-arr->items.
+            " rudimentary lexicographical sort for tests (JS default)
+            TYPES: BEGIN OF ty_sort,
+                     val TYPE string,
+                     ref TYPE REF TO data,
+                   END OF ty_sort.
+            DATA lt_sort TYPE STANDARD TABLE OF ty_sort WITH DEFAULT KEY.
+            LOOP AT is_obj-arr->items INTO DATA(lr_si).
+              APPEND VALUE #( val = to_string( unbox_value( lr_si ) ) ref = lr_si ) TO lt_sort.
+            ENDLOOP.
+            SORT lt_sort BY val ASCENDING.
+            CLEAR is_obj-arr->items.
+            LOOP AT lt_sort INTO DATA(ls_sort).
+              APPEND ls_sort-ref TO is_obj-arr->items.
+            ENDLOOP.
             rs_val = is_obj.
             RETURN.
           WHEN OTHERS.
