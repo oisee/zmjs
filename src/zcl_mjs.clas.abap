@@ -1548,6 +1548,58 @@ CLASS zcl_mjs IMPLEMENTATION.
           io_env->ret_val = lo_iter_env->ret_val.
         ENDIF.
 
+      WHEN zif_mjs=>c_node_for_in.
+        DATA(ls_iter_in) = eval_node( ir_node = <n>-right io_env = io_env ).
+        FIELD-SYMBOLS <nf_in> TYPE zif_mjs=>ty_node.
+        ASSIGN <n>-left->* TO <nf_in>.
+        DATA lv_in_name TYPE string.
+        DATA lv_in_decl TYPE abap_bool.
+        IF <nf_in>-kind = zif_mjs=>c_node_var.
+          lv_in_name = <nf_in>-str.
+          lv_in_decl = abap_true.
+        ELSEIF <nf_in>-kind = zif_mjs=>c_node_ident.
+          lv_in_name = <nf_in>-str.
+          lv_in_decl = abap_false.
+        ENDIF.
+
+        DATA lv_in_return TYPE abap_bool VALUE abap_false.
+        DATA lo_in_env TYPE REF TO zcl_mjs_env.
+
+        IF ls_iter_in-type = 6 AND ls_iter_in-obj IS BOUND.
+          LOOP AT ls_iter_in-obj->props INTO DATA(ls_prop).
+            DATA(ls_key_val) = string_val( ls_prop-key ).
+            CREATE OBJECT lo_in_env EXPORTING io_parent = io_env.
+            lo_in_env->output = io_env->output.
+
+            IF lv_in_decl = abap_true.
+              lo_in_env->set( iv_name = lv_in_name is_val = ls_key_val ).
+            ELSE.
+              io_env->set( iv_name = lv_in_name is_val = ls_key_val ).
+            ENDIF.
+
+            LOOP AT <n>-body INTO DATA(lr_inb).
+              eval_node( ir_node = lr_inb io_env = lo_in_env ).
+              IF lo_in_env->returning = abap_true OR lo_in_env->breaking = abap_true OR lo_in_env->continuing = abap_true.
+                EXIT.
+              ENDIF.
+            ENDLOOP.
+
+            IF lo_in_env->continuing = abap_true.
+              lo_in_env->continuing = abap_false.
+            ENDIF.
+
+            IF lo_in_env->returning = abap_true OR lo_in_env->breaking = abap_true.
+              lv_in_return = lo_in_env->returning.
+              EXIT.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+
+        IF lv_in_return = abap_true.
+          io_env->returning = abap_true.
+          io_env->ret_val = lo_in_env->ret_val.
+        ENDIF.
+
       WHEN zif_mjs=>c_node_block.
         LOOP AT <n>-body INTO DATA(lr_bs).
           rs_val = eval_node( ir_node = lr_bs io_env = io_env ).

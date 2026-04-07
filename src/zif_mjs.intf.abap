@@ -83,6 +83,7 @@ INTERFACE zif_mjs PUBLIC.
     c_node_regex         TYPE i VALUE 28,
     c_node_ternary       TYPE i VALUE 29,
     c_node_for_of        TYPE i VALUE 30,
+    c_node_for_in        TYPE i VALUE 36,
     c_node_assign_add    TYPE i VALUE 31,
     c_node_inc           TYPE i VALUE 32,
     c_node_dec           TYPE i VALUE 33,
