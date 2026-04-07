@@ -46,7 +46,9 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING iv_op         TYPE string
                 is_left       TYPE zif_mjs=>ty_value
                 is_right      TYPE zif_mjs=>ty_value
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+                io_env        TYPE REF TO zcl_mjs_env
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_property_access
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_prop       TYPE string
@@ -56,7 +58,7 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 iv_method     TYPE string
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
-                ir_obj_node   TYPE REF TO data
+                ir_obj_node   TYPE REF TO data OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
     CLASS-METHODS call_function
@@ -1252,7 +1254,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         DATA(ls_bl) = eval_node( ir_node = <n>-left io_env = io_env ).
         DATA(ls_br) = eval_node( ir_node = <n>-right io_env = io_env ).
-        rs_val = eval_bin_op( iv_op = <n>-op is_left = ls_bl is_right = ls_br ).
+        rs_val = eval_bin_op( iv_op = <n>-op is_left = ls_bl is_right = ls_br io_env = io_env ).
 
       WHEN zif_mjs=>c_node_unaryop.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
@@ -2383,13 +2385,55 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_bin_op.
-    IF iv_op = `+` AND ( is_left-type = 2 OR is_right-type = 2
-                      OR is_left-type = 4 OR is_right-type = 4
-                      OR is_left-type = 6 OR is_right-type = 6 ).
+    IF iv_op = `+` AND ( is_left-type = 2 OR is_right-type = 2 ).
       rs_val-type = 2.
       rs_val-str  = to_string( is_left ) && to_string( is_right ).
       RETURN.
     ENDIF.
+
+    IF iv_op = `+`.
+      DATA ls_lval TYPE zif_mjs=>ty_value.
+      DATA ls_rval TYPE zif_mjs=>ty_value.
+      ls_lval = is_left.
+      IF ls_lval-type = 4 OR ls_lval-type = 6.
+        ls_lval = eval_method_call(
+          is_obj    = ls_lval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_lval-type = 0 OR ls_lval-type = 4 OR ls_lval-type = 6.
+          ls_lval = eval_method_call(
+            is_obj    = is_left
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ENDIF.
+      ENDIF.
+      ls_rval = is_right.
+      IF ls_rval-type = 4 OR ls_rval-type = 6.
+        ls_rval = eval_method_call(
+          is_obj    = ls_rval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_rval-type = 0 OR ls_rval-type = 4 OR ls_rval-type = 6.
+          ls_rval = eval_method_call(
+            is_obj    = is_right
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ENDIF.
+      ENDIF.
+      IF ls_lval-type = 2 OR ls_rval-type = 2.
+        rs_val-type = 2.
+        rs_val-str  = to_string( ls_lval ) && to_string( ls_rval ).
+        RETURN.
+      ENDIF.
+      rs_val-type = 1.
+      rs_val-num = to_number( ls_lval ) + to_number( ls_rval ).
+      RETURN.
+    ENDIF.
+
     CASE iv_op.
       WHEN `===`.
         rs_val-type = 3.
@@ -2432,16 +2476,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         " bool coercion — convert bool side to number and retry
         IF is_left-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right io_env = io_env ).
           RETURN.
         ENDIF.
         IF is_right-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) io_env = io_env ).
           RETURN.
         ENDIF.
         RETURN.
       WHEN `!=`.
-        rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right ).
+        rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right io_env = io_env ).
         IF rs_val-num = 1. rs_val-num = 0. ELSE. rs_val-num = 1. ENDIF.
         RETURN.
     ENDCASE.

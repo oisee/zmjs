@@ -36,6 +36,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_plus_one FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_prim FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_obj FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_arr FOR TESTING RAISING zcx_mjs_runtime.
@@ -612,6 +613,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = `42` ).
+  ENDMETHOD.
+
+  METHOD test_function_plus_one.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function f() { return 0; }` && lv_nl &&
+      `f.valueOf = function() { return 1; };` && lv_nl &&
+      `console.log(f + 1);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2` ).
   ENDMETHOD.
 
   METHOD test_json_stringify_prim.
