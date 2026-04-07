@@ -88,6 +88,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_defprop_getter FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_splice FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_sort FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_build_splits FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -645,6 +646,31 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = `10 20 30` ).
+  ENDMETHOD.
+
+  METHOD test_build_splits.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function buildSplits(tokens) {` && lv_nl &&
+      `  const res = [];` && lv_nl &&
+      `  const before = [];` && lv_nl &&
+      `  let prevRow = tokens[0].row;` && lv_nl &&
+      `  for (let i = 0; i < tokens.length; i++) {` && lv_nl &&
+      `    if (tokens[i].row !== prevRow) {` && lv_nl &&
+      `      res.push({ first: [...before], second: [...tokens].splice(i) });` && lv_nl &&
+      `    }` && lv_nl &&
+      `    prevRow = tokens[i].row;` && lv_nl &&
+      `    before.push(tokens[i]);` && lv_nl &&
+      `  }` && lv_nl &&
+      `  return res;` && lv_nl &&
+      `}` && lv_nl &&
+      `const splits = buildSplits([{row: 1}, {row: 2}]);` && lv_nl &&
+      `for (const {first, second} of splits) {` && lv_nl &&
+      `  console.log("first: " + first.length + ", second: " + second.length);` && lv_nl &&
+      `}`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `first: 1, second: 1` ).
   ENDMETHOD.
 
   METHOD test262.
