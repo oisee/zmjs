@@ -2113,6 +2113,12 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val = string_val( `boolean` ).
           WHEN 4.
             rs_val = string_val( `function` ).
+          WHEN 6.
+            IF ls_toval-obj->has( `__is_class__` ) = abap_true.
+              rs_val = string_val( `function` ).
+            ELSE.
+              rs_val = string_val( `object` ).
+            ENDIF.
           WHEN OTHERS.
             rs_val = string_val( `object` ).
         ENDCASE.
@@ -2262,6 +2268,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           lo_cls_env->define( iv_name = `__super_proto__` is_val = ls_super_cls_val ).
         ENDIF.
+        ls_clsobj-obj->set( iv_key = `__is_class__` ir_val = box_value( bool_val( abap_true ) ) ).
         LOOP AT <n>-methods INTO DATA(ls_cm).
           DATA lr_mfn TYPE REF TO data.
           CREATE DATA lr_mfn TYPE zif_mjs=>ty_function.
