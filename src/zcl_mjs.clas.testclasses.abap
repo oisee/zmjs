@@ -99,6 +99,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_new_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_set FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_set_has FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_namespace_class FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -830,6 +831,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |has 4: false| )
       msg = |Set.has(4) mismatch: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_namespace_class.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const Namespace = {};` && lv_nl &&
+      `Namespace.Move = class Move {};` && lv_nl &&
+      `const move = new Namespace.Move();` && lv_nl &&
+      `console.log(move instanceof Namespace.Move);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |true| ).
   ENDMETHOD.
 
   METHOD test262.
