@@ -77,6 +77,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_lexer_loop FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_instanceof FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_destructuring FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_inc_dec FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_for_loop_inc FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1153,6 +1155,32 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2 p1| ).
+  ENDMETHOD.
+
+  METHOD test_inc_dec.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let x = 10;` && lv_nl &&
+      `console.log(x++);` && lv_nl &&
+      `console.log(++x);` && lv_nl &&
+      `console.log(x--);` && lv_nl &&
+      `console.log(--x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |10 12 12 10| ).
+  ENDMETHOD.
+
+  METHOD test_for_loop_inc.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let sum = 0;` && lv_nl &&
+      `for (let i = 0; i < 5; i++) {` && lv_nl &&
+      `  sum += i;` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(sum);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |10| ).
   ENDMETHOD.
 
 ENDCLASS.
