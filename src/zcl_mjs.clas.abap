@@ -128,6 +128,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
     DATA(ls_obj_builtin) = object_val( ).
     lo_env->define( iv_name = `Object`         is_val = ls_obj_builtin ).
+    lo_env->define( iv_name = `Set`            is_val = undefined_val( ) ).
     lo_env->define( iv_name = `RegExp`         is_val = undefined_val( ) ).
     lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
     lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
@@ -2113,6 +2114,29 @@ CLASS zcl_mjs IMPLEMENTATION.
               rs_val-num = lv_new_rx_fn.
             ENDIF.
             RETURN.
+          ELSEIF lv_cls_name = `Set`.
+            rs_val = object_val( ).
+            " Prototype with has() method
+            DATA(lo_set_proto) = object_val( ).
+            rs_val-obj->proto = lo_set_proto-obj.
+
+            " Internal storage for Set items (highly simplified for now)
+            " Use an array in the object's properties for simulation
+            DATA(lo_set_data) = array_val( VALUE #( ) ).
+            rs_val-obj->set( iv_key = `[[SetData]]` ir_val = box_value( lo_set_data ) ).
+
+            " Handle constructor argument (iterable/array)
+            IF lines( <n>-args ) >= 1.
+              DATA(lr_set_arg) = <n>-args[ 1 ].
+              DATA(ls_set_init) = eval_node( ir_node = lr_set_arg io_env = io_env ).
+              IF ls_set_init-type = 7 AND ls_set_init-arr IS BOUND.
+                LOOP AT ls_set_init-arr->items INTO DATA(lr_set_item).
+                  " highly simplified: just push all init items
+                  lo_set_data-arr->push( lr_set_item ).
+                ENDLOOP.
+              ENDIF.
+            ENDIF.
+            RETURN.
           ENDIF.
           ls_cls = io_env->get( lv_cls_name ).
         ENDIF.
@@ -2357,6 +2381,35 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
 
     CASE is_obj-type.
+      WHEN 6.
+        IF iv_method = `has` AND is_obj-obj->has( `[[SetData]]` ).
+          " Set mock behavior for 'has()'
+          DATA(lr_set_data_ref) = is_obj-obj->get( `[[SetData]]` ).
+          IF lr_set_data_ref IS BOUND AND lines( it_args ) >= 1.
+            DATA(ls_set_data_val) = unbox_value( lr_set_data_ref ).
+            DATA(ls_has_target) = it_args[ 1 ].
+            DATA(lv_found_has) = abap_false.
+            IF ls_set_data_val-type = 7 AND ls_set_data_val-arr IS BOUND.
+              LOOP AT ls_set_data_val-arr->items INTO DATA(lr_has_item).
+                DATA(ls_has_item_val) = unbox_value( lr_has_item ).
+                " highly simplified: check for value equality (like JS === but for test purposes)
+                IF ls_has_item_val-type = ls_has_target-type.
+                  CASE ls_has_item_val-type.
+                    WHEN 1. IF ls_has_item_val-num = ls_has_target-num. lv_found_has = abap_true. EXIT. ENDIF.
+                    WHEN 2. IF ls_has_item_val-str = ls_has_target-str. lv_found_has = abap_true. EXIT. ENDIF.
+                    WHEN OTHERS. " just compare pointers for complex types
+                      IF ls_has_item_val-obj = ls_has_target-obj AND ls_has_item_val-arr = ls_has_target-arr AND ls_has_item_val-fn = ls_has_target-fn.
+                        lv_found_has = abap_true. EXIT.
+                      ENDIF.
+                  ENDCASE.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+            rs_val = bool_val( lv_found_has ).
+            RETURN.
+          ENDIF.
+        ENDIF.
+
       WHEN 7.
         CASE iv_method.
           WHEN `push`.
