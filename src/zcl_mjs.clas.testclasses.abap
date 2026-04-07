@@ -27,6 +27,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_optional_chain_arr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_optional_chain_fn FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_substring_one_arg FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_plus_equals FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_extends FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expression FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_extends FOR TESTING RAISING zcx_mjs_runtime.
@@ -350,6 +351,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |world| ).
+  ENDMETHOD.
+
+  METHOD test_plus_equals.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let x = 10;` && lv_nl &&
+      `x += 5;` && lv_nl &&
+      `console.log(x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |15| ).
   ENDMETHOD.
 
   METHOD test_string_replace.
