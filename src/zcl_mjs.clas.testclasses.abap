@@ -76,6 +76,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_substr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_lexer_loop FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_instanceof FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_destructuring FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1133,6 +1134,25 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |true true true false true| ).
+  ENDMETHOD.
+
+  METHOD test_destructuring.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var C = class {` && lv_nl &&
+      `  removePragma(tokens) {` && lv_nl &&
+      `    return { tokens: ["a", "b"], pragmas: ["p1"] };` && lv_nl &&
+      `  }` && lv_nl &&
+      `  run(tokens) {` && lv_nl &&
+      `    const { tokens: filtered, pragmas } = this.removePragma(tokens);` && lv_nl &&
+      `    console.log(filtered.length);` && lv_nl &&
+      `    console.log(pragmas[0]);` && lv_nl &&
+      `  }` && lv_nl &&
+      `};` && lv_nl &&
+      `new C().run([]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 p1| ).
   ENDMETHOD.
 
 ENDCLASS.

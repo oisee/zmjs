@@ -18,6 +18,8 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_var
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_destructuring_var
+      RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_if
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_while
@@ -216,6 +218,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
   METHOD parse_var.
     next( ).
+    DATA(lv_next) = peek( ).
+    IF lv_next-val = `{`.
+      rr_node = parse_destructuring_var( ).
+      RETURN.
+    ENDIF.
     DATA(lv_name) = next( )-val.
     DATA lr_init TYPE REF TO data.
     IF peek( )-val = `=`.
@@ -260,6 +267,45 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     IF peek( )-val = `;`.
       next( ).
     ENDIF.
+    rr_node = lr_n.
+  ENDMETHOD.
+
+  METHOD parse_destructuring_var.
+    expect( `{` ).
+    DATA lt_pairs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+    WHILE peek( )-val <> `}` AND peek( )-kind <> 5.
+      DATA(lv_source) = next( )-val.
+      DATA(lv_target) = lv_source.
+      IF peek( )-val = `:`.
+        next( ).
+        lv_target = next( )-val.
+      ENDIF.
+      DATA lr_s TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_s.
+      lr_s->kind = zif_mjs=>c_node_string.
+      lr_s->str  = lv_source.
+      APPEND lr_s TO lt_pairs.
+      DATA lr_t TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_t.
+      lr_t->kind = zif_mjs=>c_node_ident.
+      lr_t->str  = lv_target.
+      APPEND lr_t TO lt_pairs.
+      IF peek( )-val = `,`.
+        next( ).
+      ENDIF.
+    ENDWHILE.
+    expect( `}` ).
+    expect( `=` ).
+    DATA(lr_right) = parse_expr( ).
+    IF peek( )-val = `;`.
+      next( ).
+    ENDIF.
+    DATA lr_n TYPE REF TO zif_mjs=>ty_node.
+    CREATE DATA lr_n.
+    lr_n->kind  = zif_mjs=>c_node_object. " reuse c_node_object for pattern
+    lr_n->op    = `D`. " flag as destructuring
+    lr_n->args  = lt_pairs.
+    lr_n->right = lr_right.
     rr_node = lr_n.
   ENDMETHOD.
 
