@@ -1611,10 +1611,24 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDLOOP.
 
       WHEN zif_mjs=>c_node_call.
+        DATA lt_call_args TYPE zif_mjs=>tt_value_slots.
+        LOOP AT <n>-args INTO DATA(lr_ca_item).
+          DATA(ls_ca_val) = eval_node( ir_node = lr_ca_item io_env = io_env ).
+          FIELD-SYMBOLS <ca_node> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_ca_item->* TO <ca_node>.
+          IF sy-subrc = 0 AND <ca_node>-op = `SPREAD` AND ls_ca_val-type = 7 AND ls_ca_val-arr IS BOUND.
+            LOOP AT ls_ca_val-arr->items INTO DATA(lr_spread_ca).
+              APPEND unbox_value( lr_spread_ca ) TO lt_call_args.
+            ENDLOOP.
+          ELSE.
+            APPEND ls_ca_val TO lt_call_args.
+          ENDIF.
+        ENDLOOP.
+
         IF <n>-str = `Boolean`.
           DATA ls_bool_in TYPE zif_mjs=>ty_value.
-          IF lines( <n>-args ) > 0.
-            ls_bool_in = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+          IF lines( lt_call_args ) > 0.
+            ls_bool_in = lt_call_args[ 1 ].
           ELSE.
             ls_bool_in = undefined_val( ).
           ENDIF.
@@ -1630,8 +1644,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF <n>-str = `JSON.stringify`.
           DATA ls_jsin TYPE zif_mjs=>ty_value.
-          IF lines( <n>-args ) > 0.
-            ls_jsin = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+          IF lines( lt_call_args ) > 0.
+            ls_jsin = lt_call_args[ 1 ].
           ELSE.
             ls_jsin = undefined_val( ).
           ENDIF.
@@ -1646,8 +1660,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           DATA lv_parts TYPE string.
           CLEAR lv_parts.
           DATA lv_first TYPE abap_bool VALUE abap_true.
-          LOOP AT <n>-args INTO DATA(lr_ca).
-            DATA(ls_cav) = eval_node( ir_node = lr_ca io_env = io_env ).
+          LOOP AT lt_call_args INTO DATA(ls_cav).
             IF lv_first = abap_false.
               lv_parts = lv_parts && ` `.
             ENDIF.
@@ -1661,14 +1674,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-str = `super`.
           DATA(ls_super_ctor_fn) = io_env->get( `__super_ctor__` ).
           IF ls_super_ctor_fn-type = 4 AND ls_super_ctor_fn-fn IS BOUND.
-            DATA lt_super_args TYPE zif_mjs=>tt_value_slots.
-            LOOP AT <n>-args INTO DATA(lr_sa).
-              APPEND eval_node( ir_node = lr_sa io_env = io_env ) TO lt_super_args.
-            ENDLOOP.
             DATA(ls_cur_this) = io_env->get( `this` ).
             DATA lr_super_this_ref TYPE REF TO data.
             lr_super_this_ref = box_value( ls_cur_this ).
-            call_function( ir_fn = ls_super_ctor_fn-fn it_args = lt_super_args
+            call_function( ir_fn = ls_super_ctor_fn-fn it_args = lt_call_args
                            io_env = io_env ir_this = lr_super_this_ref ).
             DATA(ls_updated_this) = unbox_value( lr_super_this_ref ).
             io_env->define( iv_name = `this` is_val = ls_updated_this ).
@@ -1684,19 +1693,14 @@ CLASS zcl_mjs IMPLEMENTATION.
             RETURN.
           ENDIF.
           IF ls_efn-type = 4 AND ls_efn-fn IS BOUND.
-            DATA lt_iife_args TYPE zif_mjs=>tt_value_slots.
-            LOOP AT <n>-args INTO DATA(lr_iife_arg).
-              APPEND eval_node( ir_node = lr_iife_arg io_env = io_env ) TO lt_iife_args.
-            ENDLOOP.
-
             " Handle first-class calls from expressions (e.g. __defProp())
             FIELD-SYMBOLS <efn_intercept> TYPE zif_mjs=>ty_function.
             ASSIGN ls_efn-fn->* TO <efn_intercept>.
             IF sy-subrc = 0 AND <efn_intercept>-name = `defineProperty`.
-              IF lines( lt_iife_args ) >= 3.
-                DATA(ls_ef_dp_obj)  = lt_iife_args[ 1 ].
-                DATA(ls_ef_dp_prop) = lt_iife_args[ 2 ].
-                DATA(ls_ef_dp_desc) = lt_iife_args[ 3 ].
+              IF lines( lt_call_args ) >= 3.
+                DATA(ls_ef_dp_obj)  = lt_call_args[ 1 ].
+                DATA(ls_ef_dp_prop) = lt_call_args[ 2 ].
+                DATA(ls_ef_dp_desc) = lt_call_args[ 3 ].
                 IF ls_ef_dp_obj-type = 6 AND ls_ef_dp_obj-obj IS BOUND AND ls_ef_dp_desc-type = 6 AND ls_ef_dp_desc-obj IS BOUND.
                   DATA(lr_ef_dp_vdesc) = ls_ef_dp_desc-obj->get( `value` ).
                   IF lr_ef_dp_vdesc IS BOUND.
@@ -1719,29 +1723,20 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDIF.
 
-            " If this is an expression call on a member (e.g. o.fn()), propagate this.
-            " But for now, just a plain call is fine.
-            rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_iife_args io_env = io_env ).
+            rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_call_args io_env = io_env ).
           ELSEIF <n>-op = `?.`.
             rs_val = undefined_val( ).
           ELSE.
-            " not a function? maybe should throw, but returning undefined is safer for now if it's optional
             rs_val = undefined_val( ).
           ENDIF.
           RETURN.
         ENDIF.
         DATA(ls_fn) = io_env->get( <n>-str ).
         IF ls_fn-type = 4 AND ls_fn-fn IS BOUND.
-          DATA lt_call_args TYPE zif_mjs=>tt_value_slots.
-          LOOP AT <n>-args INTO DATA(lr_fa).
-            APPEND eval_node( ir_node = lr_fa io_env = io_env ) TO lt_call_args.
-          ENDLOOP.
-
           " Intercept Object.defineProperty called as a first-class function
           FIELD-SYMBOLS <fn_intercept> TYPE zif_mjs=>ty_function.
           ASSIGN ls_fn-fn->* TO <fn_intercept>.
           IF sy-subrc = 0 AND <fn_intercept>-name = `defineProperty`.
-            " io_env->append_output( |INTERCEPTED| ).
             IF lines( lt_call_args ) >= 3.
               DATA(ls_f_dp_obj)  = lt_call_args[ 1 ].
               DATA(ls_f_dp_prop) = lt_call_args[ 2 ].
@@ -1830,16 +1825,28 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         DATA lv_method TYPE string.
         lv_method = <n>-property.
+
         DATA lt_mc_args TYPE zif_mjs=>tt_value_slots.
         LOOP AT <n>-args INTO DATA(lr_ma2).
-          APPEND eval_node( ir_node = lr_ma2 io_env = io_env ) TO lt_mc_args.
+          DATA(ls_mc_arg) = eval_node( ir_node = lr_ma2 io_env = io_env ).
+          FIELD-SYMBOLS <mc_arg_node> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_ma2->* TO <mc_arg_node>.
+          IF sy-subrc = 0 AND <mc_arg_node>-op = `SPREAD` AND ls_mc_arg-type = 7 AND ls_mc_arg-arr IS BOUND.
+            LOOP AT ls_mc_arg-arr->items INTO DATA(lr_spread_mc).
+              APPEND unbox_value( lr_spread_mc ) TO lt_mc_args.
+            ENDLOOP.
+          ELSE.
+            APPEND ls_mc_arg TO lt_mc_args.
+          ENDIF.
         ENDLOOP.
+
         rs_val = eval_method_call(
           is_obj      = ls_mcobj
           iv_method   = lv_method
           it_args     = lt_mc_args
           io_env      = io_env
           ir_obj_node = <n>-object ).
+        RETURN.
 
       WHEN zif_mjs=>c_node_func_decl.
         DATA lr_fn_data TYPE REF TO data.
@@ -2234,19 +2241,26 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF iv_prop = `length`.
           rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
         ELSE.
-          TRY.
-              DATA lv_aidx TYPE i.
-              lv_aidx = iv_prop.
-              DATA lr_aelem TYPE REF TO data.
-              lr_aelem = is_obj-arr->get_item( lv_aidx ).
-              IF lr_aelem IS BOUND.
-                rs_val = unbox_value( lr_aelem ).
-              ELSE.
-                rs_val = undefined_val( ).
-              ENDIF.
-            CATCH cx_root.
+          DATA is_not_numeric_prop TYPE abap_bool VALUE abap_false.
+          DATA lv_aidx TYPE i.
+          IF iv_prop CO `0123456789 ` AND iv_prop IS NOT INITIAL.
+             lv_aidx = iv_prop.
+             is_not_numeric_prop = abap_false.
+          ELSE.
+             is_not_numeric_prop = abap_true.
+          ENDIF.
+
+          IF is_not_numeric_prop = abap_false.
+            DATA lr_aelem TYPE REF TO data.
+            lr_aelem = is_obj-arr->get_item( lv_aidx ).
+            IF lr_aelem IS BOUND.
+              rs_val = unbox_value( lr_aelem ).
+            ELSE.
               rs_val = undefined_val( ).
-          ENDTRY.
+            ENDIF.
+          ELSE.
+             rs_val = undefined_val( ).
+          ENDIF.
         ENDIF.
       WHEN 2.
         IF iv_prop = `length`.
@@ -2296,14 +2310,16 @@ CLASS zcl_mjs IMPLEMENTATION.
       lr_this = box_value( is_obj ).
       rs_val = call_function( ir_fn = ls_mval-fn it_args = it_args io_env = io_env
                               ir_this = lr_this ).
+      DATA(ls_updated) = unbox_value( lr_this ).
       IF ir_obj_node IS BOUND.
         FIELD-SYMBOLS <on> TYPE zif_mjs=>ty_node.
         ASSIGN ir_obj_node->* TO <on>.
         IF sy-subrc = 0 AND <on>-kind = zif_mjs=>c_node_ident.
-          DATA(ls_updated) = unbox_value( lr_this ).
           io_env->set( iv_name = <on>-str is_val = ls_updated ).
         ENDIF.
       ENDIF.
+      " Also update the object reference in the caller's context if possible
+      " But for built-ins, we mainly care about updating 'this' if the method was called on 'this'
       RETURN.
     ENDIF.
 
@@ -2311,11 +2327,17 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN 7.
         CASE iv_method.
           WHEN `push`.
-            IF lines( it_args ) > 0.
-              DATA ls_push_arg TYPE zif_mjs=>ty_value.
-              READ TABLE it_args INDEX 1 INTO ls_push_arg.
+            LOOP AT it_args INTO DATA(ls_push_arg).
               is_obj-arr->push( box_value( ls_push_arg ) ).
-              rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
+            ENDLOOP.
+            rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
+
+            IF ir_obj_node IS BOUND.
+              FIELD-SYMBOLS <on_obj> TYPE zif_mjs=>ty_node.
+              ASSIGN ir_obj_node->* TO <on_obj>.
+              IF sy-subrc = 0 AND <on_obj>-kind = zif_mjs=>c_node_ident.
+                io_env->set( iv_name = <on_obj>-str is_val = is_obj ).
+              ENDIF.
             ENDIF.
             RETURN.
           WHEN `map`.
