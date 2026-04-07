@@ -554,7 +554,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
            OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`
-           OR lv_two = `=>`.
+           OR lv_two = `=>` OR lv_two = `+=`.
           IF lv_i + 2 < lv_len AND
              ( lv_two = `==` OR lv_two = `!=` ).
             lv_three = iv_src+lv_i(3).
@@ -1134,7 +1134,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         annotate_slots( ir_node = <n>-right ir_map = ir_map ).
 
-      WHEN zif_mjs=>c_node_assign.
+      WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm3>).
         IF sy-subrc = 0.
           <n>-slot    = <sm3>-slot.
@@ -1269,8 +1269,18 @@ CLASS zcl_mjs IMPLEMENTATION.
             " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
 
-      WHEN zif_mjs=>c_node_assign.
+      WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         DATA(ls_aval) = eval_node( ir_node = <n>-right io_env = io_env ).
+        DATA(ls_curr) = VALUE zif_mjs=>ty_value( ).
+        IF <n>-kind = zif_mjs=>c_node_assign_add.
+          IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+            READ TABLE io_env->slots INDEX <n>-slot INTO ls_curr.
+          ELSE.
+            ls_curr = io_env->get( <n>-str ).
+          ENDIF.
+          ls_aval = eval_bin_op( iv_op = `+` is_left = ls_curr is_right = ls_aval io_env = io_env ).
+        ENDIF.
+
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_asgn>).
           IF sy-subrc = 0. <sv_asgn> = ls_aval. ENDIF.
