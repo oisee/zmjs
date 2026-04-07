@@ -91,6 +91,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_sort FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_build_splits FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_spread FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_regexp FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -707,6 +708,26 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |first element expected 1, got: 1| )
       msg = |Spread test: first element mismatch: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_regexp.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const rx = /abc/i;` && lv_nl &&
+      `console.log("pattern: " + rx.source);` && lv_nl &&
+      `console.log("global: " + rx.global);` && lv_nl &&
+      `console.log("ignoreCase: " + rx.ignoreCase);` && lv_nl &&
+      `const res = "ABC".replace(rx, "X");` && lv_nl &&
+      `console.log("result: " + res);`.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+
+    " Note: currently RegExp is a primitive-like type 8, and doesn't fully support properties
+    " This test will likely show 'undefined' for .source, .global, .ignoreCase until implemented.
+    " However, .replace() uses type 8 internally.
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |result: X| )
+      msg = |RegExp replace result mismatch: { lv_r }| ).
   ENDMETHOD.
 
   METHOD test262.
