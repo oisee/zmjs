@@ -34,6 +34,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_replace FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_regex FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_trim FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_trim_end FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
@@ -421,6 +422,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |hello hello hello hello hello hello hello hello| ).
+  ENDMETHOD.
+
+  METHOD test_trim_end.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("  hello  ".trimEnd());` && lv_nl &&
+      `console.log("  hello".trimEnd());` && lv_nl &&
+      `console.log("hello  ".trimEnd());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |hello hello hello| ).
   ENDMETHOD.
 
   METHOD test_replace_regex.
