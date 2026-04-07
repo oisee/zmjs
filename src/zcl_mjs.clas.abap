@@ -2527,6 +2527,38 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDIF.
             RETURN.
+          WHEN `filter`.
+            IF lines( it_args ) > 0.
+              DATA ls_flt_cb TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_flt_cb.
+              IF ls_flt_cb-type = 4 AND ls_flt_cb-fn IS BOUND.
+                DATA lo_flt_arr TYPE REF TO zcl_mjs_arr.
+                CREATE OBJECT lo_flt_arr.
+                DATA lv_flt_idx TYPE i VALUE 0.
+                LOOP AT is_obj-arr->items INTO DATA(lr_flt_item).
+                  DATA ls_flt_elem TYPE zif_mjs=>ty_value.
+                  ls_flt_elem = unbox_value( lr_flt_item ).
+                  DATA lt_flt_args TYPE zif_mjs=>tt_value_slots.
+                  CLEAR lt_flt_args.
+                  APPEND ls_flt_elem TO lt_flt_args.
+                  APPEND number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
+                  APPEND is_obj TO lt_flt_args.
+                  DATA(ls_flt_result) = call_function(
+                    ir_fn   = ls_flt_cb-fn
+                    it_args = lt_flt_args
+                    io_env  = io_env ).
+                  IF is_true( ls_flt_result ) = abap_true.
+                    lo_flt_arr->push( lr_flt_item ).
+                  ENDIF.
+                  lv_flt_idx = lv_flt_idx + 1.
+                ENDLOOP.
+                rs_val-type = 7.
+                rs_val-arr = lo_flt_arr.
+              ENDIF.
+            ELSE.
+              rs_val = array_val( VALUE #( ) ).
+            ENDIF.
+            RETURN.
           WHEN `splice`.
             DATA lt_spl_args TYPE zif_mjs=>tt_value_slots.
             lt_spl_args = it_args.
