@@ -1834,7 +1834,43 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
         ENDIF.
 
-        DATA(ls_mcobj) = eval_node( ir_node = <n>-object io_env = io_env ).
+        DATA ls_mcobj TYPE zif_mjs=>ty_value.
+        IF <n>-object IS BOUND.
+          FIELD-SYMBOLS <mc_obj_id> TYPE zif_mjs=>ty_node.
+          ASSIGN <n>-object->* TO <mc_obj_id>.
+          IF sy-subrc = 0 AND <mc_obj_id>-kind = zif_mjs=>c_node_ident AND <mc_obj_id>-str = `super`.
+            ls_mcobj = io_env->get( `__super_proto__` ).
+            IF ls_mcobj-type = 6 AND ls_mcobj-obj IS BOUND.
+              DATA(ls_smval) = eval_property_access( is_obj = ls_mcobj iv_prop = <n>-property io_env = io_env ).
+              IF ls_smval-type = 4 AND ls_smval-fn IS BOUND.
+                DATA lr_super_this TYPE REF TO data.
+                lr_super_this = box_value( io_env->get( `this` ) ).
+                DATA lt_s_args TYPE zif_mjs=>tt_value_slots.
+                LOOP AT <n>-args INTO DATA(lr_sa).
+                  DATA(ls_sa_v) = eval_node( ir_node = lr_sa io_env = io_env ).
+                  FIELD-SYMBOLS <sa_n> TYPE zif_mjs=>ty_node.
+                  ASSIGN lr_sa->* TO <sa_n>.
+                  IF sy-subrc = 0 AND <sa_n>-op = `SPREAD` AND ls_sa_v-type = 7 AND ls_sa_v-arr IS BOUND.
+                    LOOP AT ls_sa_v-arr->items INTO DATA(lr_spread_sa).
+                      APPEND unbox_value( lr_spread_sa ) TO lt_s_args.
+                    ENDLOOP.
+                  ELSE.
+                    APPEND ls_sa_v TO lt_s_args.
+                  ENDIF.
+                ENDLOOP.
+                rs_val = call_function( ir_fn = ls_smval-fn it_args = lt_s_args io_env = io_env ir_this = lr_super_this ).
+                DATA(ls_upd_this) = unbox_value( lr_super_this ).
+                io_env->set( iv_name = `this` is_val = ls_upd_this ).
+                RETURN.
+              ENDIF.
+            ENDIF.
+          ELSE.
+            ls_mcobj = eval_node( ir_node = <n>-object io_env = io_env ).
+          ENDIF.
+        ELSE.
+          ls_mcobj = eval_node( ir_node = <n>-object io_env = io_env ).
+        ENDIF.
+
         IF <n>-op = `?.` AND ( ls_mcobj-type = 0 OR ls_mcobj-type = 5 ).
           rs_val = undefined_val( ).
           RETURN.
@@ -2224,6 +2260,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               lo_cls_env->define( iv_name = `__super_ctor__` is_val = ls_sc_val ).
             ENDIF.
           ENDIF.
+          lo_cls_env->define( iv_name = `__super_proto__` is_val = ls_super_cls_val ).
         ENDIF.
         LOOP AT <n>-methods INTO DATA(ls_cm).
           DATA lr_mfn TYPE REF TO data.
