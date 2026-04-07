@@ -2851,6 +2851,46 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDWHILE.
             rs_val = string_val( lv_trim_e_tmp ).
+          WHEN `split`.
+            IF lines( it_args ) > 0.
+              DATA(ls_spl_sep) = it_args[ 1 ].
+              DATA(lv_spl_sep) = to_string( ls_spl_sep ).
+              DATA(lv_spl_limit) = 2147483647. " max i
+              IF lines( it_args ) >= 2.
+                lv_spl_limit = to_number( it_args[ 2 ] ).
+              ENDIF.
+
+              DATA(lt_spl_items) = VALUE string_table( ).
+              IF lv_spl_sep = ``.
+                " split into characters
+                DATA(lv_spl_i) = 0.
+                WHILE lv_spl_i < strlen( is_obj-str ).
+                  APPEND substring( val = is_obj-str off = lv_spl_i len = 1 ) TO lt_spl_items.
+                  lv_spl_i = lv_spl_i + 1.
+                ENDWHILE.
+              ELSE.
+                SPLIT is_obj-str AT lv_spl_sep INTO TABLE lt_spl_items.
+              ENDIF.
+
+              DATA lo_spl_arr TYPE REF TO zcl_mjs_arr.
+              CREATE OBJECT lo_spl_arr.
+              DATA lv_spl_count TYPE i.
+              lv_spl_count = 0.
+              LOOP AT lt_spl_items INTO DATA(lv_spl_item) WHERE table_line IS NOT INITIAL OR table_line = ``.
+                IF lv_spl_count >= lv_spl_limit. EXIT. ENDIF.
+                lo_spl_arr->push( box_value( string_val( lv_spl_item ) ) ).
+                lv_spl_count = lv_spl_count + 1.
+              ENDLOOP.
+              rs_val-type = 7.
+              rs_val-arr = lo_spl_arr.
+            ELSE.
+              " default: one-element array with full string
+              DATA lo_spl_def TYPE REF TO zcl_mjs_arr.
+              CREATE OBJECT lo_spl_def.
+              lo_spl_def->push( box_value( is_obj ) ).
+              rs_val-type = 7.
+              rs_val-arr = lo_spl_def.
+            ENDIF.
           WHEN OTHERS.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.

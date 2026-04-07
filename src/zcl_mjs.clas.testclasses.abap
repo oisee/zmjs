@@ -86,6 +86,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_starts_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_ends_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_last_index_of FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_split FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_in FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_defprop_getter FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_splice FOR TESTING RAISING zcx_mjs_runtime.
@@ -639,6 +640,20 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |9 3 2 6 -1 -1| ).
+  ENDMETHOD.
+
+  METHOD test_string_split.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const res1 = "a,b,c".split(",");` && lv_nl &&
+      `console.log(res1.length + " " + res1[0] + " " + res1[2]);` && lv_nl &&
+      `const res2 = "hello".split("");` && lv_nl &&
+      `console.log(res2.length + " " + res2[0] + " " + res2[4]);` && lv_nl &&
+      `const res3 = "a,b,c".split(",", 2);` && lv_nl &&
+      `console.log(res3.length + " " + res3[1]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |3 a c 5 h o 2 b| ).
   ENDMETHOD.
 
   METHOD test_for_in.
