@@ -79,6 +79,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_destructuring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_inc_dec FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_loop_inc FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_to_upper_case FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_to_lower_case FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -525,6 +527,18 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |function| ).
+  ENDMETHOD.
+
+  METHOD test_to_upper_case.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log("hello".toUpperCase())| ) )
+      exp = |HELLO| ).
+  ENDMETHOD.
+
+  METHOD test_to_lower_case.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( |console.log("HELLO".toLowerCase())| ) )
+      exp = |hello| ).
   ENDMETHOD.
 
   METHOD test262.
