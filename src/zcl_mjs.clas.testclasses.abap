@@ -101,6 +101,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_set_has FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_namespace_class FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_typeof FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_array_filter FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -854,6 +855,17 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |function| ).
+  ENDMETHOD.
+
+  METHOD test_array_filter.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const arr = [1, 2, 3, 4, 5];` && lv_nl &&
+      `const filtered = arr.filter(x => x > 2);` && lv_nl &&
+      `console.log(filtered.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |3| ).
   ENDMETHOD.
 
   METHOD test262.
