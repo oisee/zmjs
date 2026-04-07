@@ -690,7 +690,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   METHOD parse_comparison.
     DATA(lr_left) = parse_add_sub( ).
     WHILE peek( )-kind = 3 AND ( peek( )-val = `<` OR peek( )-val = `>`
-       OR peek( )-val = `<=` OR peek( )-val = `>=` ).
+       OR peek( )-val = `<=` OR peek( )-val = `>=` OR peek( )-val = `instanceof` ).
       DATA(lv_op) = next( )-val.
       DATA(lr_right) = parse_add_sub( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.

@@ -124,6 +124,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
     " Standard error constructors — defined as undefined placeholders so that
     " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
+    DATA(ls_obj_builtin) = object_val( ).
+    lo_env->define( iv_name = `Object`         is_val = ls_obj_builtin ).
     lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
     lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
     lo_env->define( iv_name = `TypeError`      is_val = undefined_val( ) ).
@@ -536,6 +538,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         CLEAR ls_tok.
         ls_tok-kind = 2.
         ls_tok-val  = iv_src+lv_i(lv_idlen).
+        IF ls_tok-val = `instanceof`.
+          ls_tok-kind = 3.
+        ENDIF.
         APPEND ls_tok TO rt_tokens.
         lv_i = lv_j.
         CONTINUE.
@@ -1761,6 +1766,10 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_object.
         DATA ls_obj TYPE zif_mjs=>ty_value.
         ls_obj = object_val( ).
+        DATA(ls_obj_bt) = io_env->get( `Object` ).
+        IF ls_obj_bt-type = 6 AND ls_obj_bt-obj IS BOUND.
+          ls_obj-obj->proto = ls_obj_bt-obj.
+        ENDIF.
         DATA lv_oi TYPE i VALUE 1.
         WHILE lv_oi <= lines( <n>-args ).
           DATA lr_okey TYPE REF TO data.
@@ -1869,6 +1878,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF ls_cls-type = 6 AND ls_cls-obj IS BOUND.
           DATA ls_instance TYPE zif_mjs=>ty_value.
           ls_instance = object_val( ).
+          ls_instance-obj->proto = ls_cls-obj.
           DATA lt_new_args TYPE zif_mjs=>tt_value_slots.
           LOOP AT <n>-args INTO DATA(lr_na).
             APPEND eval_node( ir_node = lr_na io_env = io_env ) TO lt_new_args.
@@ -1897,6 +1907,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ELSEIF ls_cls-type = 4 AND ls_cls-fn IS BOUND.
           DATA ls_p_inst TYPE zif_mjs=>ty_value.
           ls_p_inst = object_val( ).
+          ls_p_inst-obj->proto = ls_cls-obj.
           DATA lt_p_args TYPE zif_mjs=>tt_value_slots.
           LOOP AT <n>-args INTO DATA(lr_pa).
             APPEND eval_node( ir_node = lr_pa io_env = io_env ) TO lt_p_args.
@@ -1919,6 +1930,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-op IS NOT INITIAL.
           DATA(ls_super_cls) = io_env->get( <n>-op ).
           IF ls_super_cls-type = 6 AND ls_super_cls-obj IS BOUND.
+            ls_clsobj-obj->proto = ls_super_cls-obj.
             LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
               ls_clsobj-obj->set( iv_key = <sp>-key ir_val = <sp>-val ).
             ENDLOOP.
@@ -1927,6 +1939,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ELSEIF <n>-left IS BOUND.
           DATA(ls_super_expr) = eval_node( ir_node = <n>-left io_env = io_env ).
           IF ls_super_expr-type = 6 AND ls_super_expr-obj IS BOUND.
+            ls_clsobj-obj->proto = ls_super_expr-obj.
             LOOP AT ls_super_expr-obj->props ASSIGNING FIELD-SYMBOL(<sep>).
               ls_clsobj-obj->set( iv_key = <sep>-key ir_val = <sep>-val ).
             ENDLOOP.
@@ -2537,6 +2550,22 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN `!=`.
         rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right io_env = io_env ).
         IF rs_val-num = 1. rs_val-num = 0. ELSE. rs_val-num = 1. ENDIF.
+        RETURN.
+      WHEN `instanceof`.
+        rs_val-type = 3.
+        IF is_right-type <> 4 AND is_right-type <> 6.
+          RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: Right-hand side of 'instanceof' is not an object|.
+        ENDIF.
+        IF is_left-type = 6 AND is_left-obj IS BOUND.
+          DATA(lo_curr) = is_left-obj.
+          WHILE lo_curr IS BOUND.
+            IF lo_curr = is_right-obj.
+              rs_val-num = 1.
+              RETURN.
+            ENDIF.
+            lo_curr = lo_curr->proto.
+          ENDWHILE.
+        ENDIF.
         RETURN.
     ENDCASE.
     DATA lv_a TYPE f.
