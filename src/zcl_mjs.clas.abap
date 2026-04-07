@@ -1981,7 +1981,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA lt_arr_refs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
         CLEAR lt_arr_refs.
         LOOP AT <n>-args INTO DATA(lr_ae).
-          APPEND box_value( eval_node( ir_node = lr_ae io_env = io_env ) ) TO lt_arr_refs.
+          DATA(lr_ae_val) = eval_node( ir_node = lr_ae io_env = io_env ).
+          FIELD-SYMBOLS <ae_node> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_ae->* TO <ae_node>.
+          IF sy-subrc = 0 AND <ae_node>-op = `SPREAD` AND lr_ae_val-type = 7 AND lr_ae_val-arr IS BOUND.
+            LOOP AT lr_ae_val-arr->items INTO DATA(lr_spread_item).
+              APPEND lr_spread_item TO lt_arr_refs.
+            ENDLOOP.
+          ELSE.
+            APPEND box_value( lr_ae_val ) TO lt_arr_refs.
+          ENDIF.
         ENDLOOP.
         rs_val = array_val( lt_arr_refs ).
 

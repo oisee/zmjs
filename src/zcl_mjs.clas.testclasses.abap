@@ -665,12 +665,16 @@ CLASS ltcl_test IMPLEMENTATION.
       `  return res;` && lv_nl &&
       `}` && lv_nl &&
       `const splits = buildSplits([{row: 1}, {row: 2}]);` && lv_nl &&
-      `for (const {first, second} of splits) {` && lv_nl &&
-      `  console.log("first: " + first.length + ", second: " + second.length);` && lv_nl &&
+      `for (const split of splits) {` && lv_nl &&
+      `  console.log("first: " + split.first.length + ", second: " + split.second.length);` && lv_nl &&
       `}`.
-    cl_abap_unit_assert=>assert_equals(
-      act = trim( zcl_mjs=>eval( lv_js ) )
-      exp = `first: 1, second: 1` ).
+    TRY.
+      cl_abap_unit_assert=>assert_equals(
+        act = trim( zcl_mjs=>eval( lv_js ) )
+        exp = `first: 1, second: 1` ).
+    CATCH zcx_mjs_throw INTO DATA(lx).
+      cl_abap_unit_assert=>fail( lx->val-str ).
+    ENDTRY.
   ENDMETHOD.
 
   METHOD test262.
