@@ -83,7 +83,11 @@ INTERFACE zif_mjs PUBLIC.
     c_node_regex         TYPE i VALUE 28,
     c_node_ternary       TYPE i VALUE 29,
     c_node_for_of        TYPE i VALUE 30,
-    c_node_assign_add    TYPE i VALUE 31.
+    c_node_assign_add    TYPE i VALUE 31,
+    c_node_inc           TYPE i VALUE 32,
+    c_node_dec           TYPE i VALUE 33,
+    c_node_post_inc      TYPE i VALUE 34,
+    c_node_post_dec      TYPE i VALUE 35.
 
   " AST Node
   TYPES:
@@ -94,10 +98,16 @@ INTERFACE zif_mjs PUBLIC.
       op            TYPE string,
       left          TYPE REF TO data,
       right         TYPE REF TO data,
+      object        TYPE REF TO data,
+      property      TYPE string,
+      prop_expr     TYPE REF TO data,
       args          TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       body          TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       params        TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
       default_params TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      slot          TYPE i,
+      slot_ok       TYPE abap_bool.
+  TYPES END OF ty_node.
       cond      TYPE REF TO data,
       els       TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       init      TYPE REF TO data,
