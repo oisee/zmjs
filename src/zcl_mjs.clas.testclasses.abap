@@ -89,6 +89,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_splice FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_sort FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_build_splits FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_spread FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -675,6 +676,25 @@ CLASS ltcl_test IMPLEMENTATION.
     CATCH zcx_mjs_throw INTO DATA(lx).
       cl_abap_unit_assert=>fail( lx->val-str ).
     ENDTRY.
+  ENDMETHOD.
+
+  METHOD test_spread.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const dest = [];` && lv_nl &&
+      `const arr = [1, 2, 3];` && lv_nl &&
+      `dest.push(...arr);` && lv_nl &&
+      `console.log("length expected 3, got: " + dest.length);` && lv_nl &&
+      `console.log("first element expected 1, got: " + dest[0]);`.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |length expected 3, got: 3| )
+      msg = |Spread test: length mismatch: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |first element expected 1, got: 1| )
+      msg = |Spread test: first element mismatch: { lv_r }| ).
   ENDMETHOD.
 
   METHOD test262.
