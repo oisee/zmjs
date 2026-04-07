@@ -94,6 +94,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_set FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_set_has FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -757,6 +758,31 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |result: object| )
       msg = |new Set() constructor result mismatch: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD test_set_has.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const s = new Set([1, 2, "abc"]);` && lv_nl &&
+      `console.log("has 1: " + s.has(1));` && lv_nl &&
+      `console.log("has 2: " + s.has(2));` && lv_nl &&
+      `console.log("has abc: " + s.has("abc"));` && lv_nl &&
+      `console.log("has 4: " + s.has(4));`.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |has 1: true| )
+      msg = |Set.has(1) mismatch: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |has 2: true| )
+      msg = |Set.has(2) mismatch: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |has abc: true| )
+      msg = |Set.has("abc") mismatch: { lv_r }| ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |has 4: false| )
+      msg = |Set.has(4) mismatch: { lv_r }| ).
   ENDMETHOD.
 
   METHOD test262.
