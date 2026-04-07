@@ -76,6 +76,8 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
     METHODS apply_postfix
       IMPORTING ir_start      TYPE REF TO data
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_member
+      RETURNING VALUE(rr_node) TYPE REF TO data.
 ENDCLASS.
 
 CLASS zcl_mjs_parser IMPLEMENTATION.
@@ -849,28 +851,61 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     ENDIF.
     IF peek( )-val = `new` AND peek( )-kind = 2.
       next( ).
-      DATA(lr_c_expr) = parse_primary( ).
+      DATA(lr_c_expr) = parse_member( ).
       DATA(lv_c_name) = ``.
       FIELD-SYMBOLS <c_node> TYPE zif_mjs=>ty_node.
       ASSIGN lr_c_expr->* TO <c_node>.
       IF <c_node>-kind = zif_mjs=>c_node_ident.
         lv_c_name = <c_node>-str.
       ENDIF.
+      DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
       IF peek( )-val = `(`.
         next( ).
-        DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
         lt_args = parse_call_args( ).
-        DATA lr_new TYPE REF TO zif_mjs=>ty_node.
-        CREATE DATA lr_new.
-        lr_new->kind = zif_mjs=>c_node_new.
-        lr_new->str  = lv_c_name.
-        lr_new->left = lr_c_expr.
-        lr_new->args = lt_args.
-        rr_node = apply_postfix( lr_new ).
-        RETURN.
+      ELSE.
+        CLEAR lt_args.
       ENDIF.
+      DATA lr_new TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_new.
+      lr_new->kind = zif_mjs=>c_node_new.
+      lr_new->str  = lv_c_name.
+      lr_new->left = lr_c_expr.
+      lr_new->args = lt_args.
+      rr_node = apply_postfix( lr_new ).
+      RETURN.
     ENDIF.
     rr_node = parse_postfix( ).
+  ENDMETHOD.
+
+  METHOD parse_member.
+    DATA(lr_left) = parse_primary( ).
+    DATA lv_continue TYPE abap_bool.
+    lv_continue = abap_true.
+    WHILE lv_continue = abap_true.
+      IF peek( )-val = `.`.
+        next( ).
+        DATA(lv_prop) = next( )-val.
+        DATA lr_ma TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_ma.
+        lr_ma->kind     = zif_mjs=>c_node_member_access.
+        lr_ma->object   = lr_left.
+        lr_ma->property = lv_prop.
+        lr_left = lr_ma.
+      ELSEIF peek( )-val = `[`.
+        next( ).
+        DATA(lr_idx) = parse_expr( ).
+        expect( `]` ).
+        DATA lr_ba TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_ba.
+        lr_ba->kind      = zif_mjs=>c_node_member_access.
+        lr_ba->object    = lr_left.
+        lr_ba->prop_expr = lr_idx.
+        lr_left = lr_ba.
+      ELSE.
+        lv_continue = abap_false.
+      ENDIF.
+    ENDWHILE.
+    rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_postfix.
