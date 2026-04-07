@@ -83,6 +83,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_to_lower_case FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_starts_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_ends_with FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_for_in FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -569,6 +570,21 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |true false true false true true| ).
+  ENDMETHOD.
+
+  METHOD test_for_in.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let keys = [];` && lv_nl &&
+      `let obj = {a: 1, b: 2};` && lv_nl &&
+      `for (const k in obj) { keys.push(k); }` && lv_nl &&
+      `console.log(keys.length);` && lv_nl &&
+      `keys.sort();` && lv_nl &&
+      `console.log(keys[0]);` && lv_nl &&
+      `console.log(keys[1]);` && lv_nl.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 a b| ).
   ENDMETHOD.
 
   METHOD test262.

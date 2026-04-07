@@ -373,6 +373,19 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n_of->body  = lt_body_of.
       rr_node = lr_n_of.
       RETURN.
+    ELSEIF peek( )-val = `in`.
+      next( ).
+      DATA(lr_right_in) = parse_expr( ).
+      expect( `)` ).
+      DATA(lt_body_in) = parse_body( ).
+      DATA lr_n_in TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_n_in.
+      lr_n_in->kind  = zif_mjs=>c_node_for_in.
+      lr_n_in->left  = lr_init.
+      lr_n_in->right = lr_right_in.
+      lr_n_in->body  = lt_body_in.
+      rr_node = lr_n_in.
+      RETURN.
     ENDIF.
     IF peek( )-val = `;`.
       next( ).
