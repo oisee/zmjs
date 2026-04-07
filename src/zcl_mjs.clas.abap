@@ -1686,6 +1686,35 @@ CLASS zcl_mjs IMPLEMENTATION.
             LOOP AT <n>-args INTO DATA(lr_iife_arg).
               APPEND eval_node( ir_node = lr_iife_arg io_env = io_env ) TO lt_iife_args.
             ENDLOOP.
+
+            " Handle first-class calls from expressions (e.g. __defProp())
+            FIELD-SYMBOLS <efn_intercept> TYPE zif_mjs=>ty_function.
+            ASSIGN ls_efn-fn->* TO <efn_intercept>.
+            IF sy-subrc = 0 AND <efn_intercept>-name = `defineProperty`.
+              IF lines( lt_iife_args ) >= 3.
+                DATA(ls_ef_dp_obj)  = lt_iife_args[ 1 ].
+                DATA(ls_ef_dp_prop) = lt_iife_args[ 2 ].
+                DATA(ls_ef_dp_desc) = lt_iife_args[ 3 ].
+                IF ls_ef_dp_obj-type = 6 AND ls_ef_dp_obj-obj IS BOUND AND ls_ef_dp_desc-type = 6 AND ls_ef_dp_desc-obj IS BOUND.
+                  DATA(lr_ef_dp_vdesc) = ls_ef_dp_desc-obj->get( `value` ).
+                  IF lr_ef_dp_vdesc IS BOUND.
+                    ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = lr_ef_dp_vdesc ).
+                  ELSE.
+                    DATA(lr_ef_dp_get) = ls_ef_dp_desc-obj->get( `get` ).
+                    IF lr_ef_dp_get IS BOUND.
+                      DATA(ls_ef_get_val) = unbox_value( lr_ef_dp_get ).
+                      IF ls_ef_get_val-type = 4.
+                        DATA(ls_ef_gv) = call_function( ir_fn = ls_ef_get_val-fn it_args = VALUE #( ) io_env = io_env ).
+                        ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = box_value( ls_ef_gv ) ).
+                      ENDIF.
+                    ENDIF.
+                  ENDIF.
+                  rs_val = ls_ef_dp_obj.
+                  RETURN.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+
             " If this is an expression call on a member (e.g. o.fn()), propagate this.
             " But for now, just a plain call is fine.
             rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_iife_args io_env = io_env ).
@@ -1703,6 +1732,36 @@ CLASS zcl_mjs IMPLEMENTATION.
           LOOP AT <n>-args INTO DATA(lr_fa).
             APPEND eval_node( ir_node = lr_fa io_env = io_env ) TO lt_call_args.
           ENDLOOP.
+
+          " Intercept Object.defineProperty called as a first-class function
+          FIELD-SYMBOLS <fn_intercept> TYPE zif_mjs=>ty_function.
+          ASSIGN ls_fn-fn->* TO <fn_intercept>.
+          IF sy-subrc = 0 AND <fn_intercept>-name = `defineProperty`.
+            " io_env->append_output( |INTERCEPTED| ).
+            IF lines( lt_call_args ) >= 3.
+              DATA(ls_f_dp_obj)  = lt_call_args[ 1 ].
+              DATA(ls_f_dp_prop) = lt_call_args[ 2 ].
+              DATA(ls_f_dp_desc) = lt_call_args[ 3 ].
+              IF ls_f_dp_obj-type = 6 AND ls_f_dp_obj-obj IS BOUND AND ls_f_dp_desc-type = 6 AND ls_f_dp_desc-obj IS BOUND.
+                DATA(lr_f_dp_vdesc) = ls_f_dp_desc-obj->get( `value` ).
+                IF lr_f_dp_vdesc IS BOUND.
+                  ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = lr_f_dp_vdesc ).
+                ELSE.
+                  DATA(lr_f_dp_get) = ls_f_dp_desc-obj->get( `get` ).
+                  IF lr_f_dp_get IS BOUND.
+                    DATA(ls_f_get_val) = unbox_value( lr_f_dp_get ).
+                    IF ls_f_get_val-type = 4.
+                      DATA(ls_f_gv) = call_function( ir_fn = ls_f_get_val-fn it_args = VALUE #( ) io_env = io_env ).
+                      ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = box_value( ls_f_gv ) ).
+                    ENDIF.
+                  ENDIF.
+                ENDIF.
+                rs_val = ls_f_dp_obj.
+                RETURN.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+
           rs_val = call_function( ir_fn = ls_fn-fn it_args = lt_call_args io_env = io_env ).
         ENDIF.
 
@@ -1735,6 +1794,18 @@ CLASS zcl_mjs IMPLEMENTATION.
                   DATA(lr_dp_vdesc) = ls_dp_desc-obj->get( `value` ).
                   IF lr_dp_vdesc IS BOUND.
                     ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = lr_dp_vdesc ).
+                  ELSE.
+                    " Handle getter/setter
+                    DATA(lr_dp_get) = ls_dp_desc-obj->get( `get` ).
+                    IF lr_dp_get IS BOUND.
+                      DATA(ls_get_val) = unbox_value( lr_dp_get ).
+                      IF ls_get_val-type = 4.
+                        " Poor man's getter: evaluate it NOW and set as value
+                        " Better than nothing for bundle.js initialization patterns
+                        DATA(ls_gv) = call_function( ir_fn = ls_get_val-fn it_args = VALUE #( ) io_env = io_env ).
+                        ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = box_value( ls_gv ) ).
+                      ENDIF.
+                    ENDIF.
                   ENDIF.
                   rs_val = ls_dp_obj.
                   RETURN.
@@ -1920,6 +1991,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               FIELD-SYMBOLS <obj_mafn> TYPE zif_mjs=>ty_function.
               ASSIGN lr_obj_mafn->* TO <obj_mafn>.
               <obj_mafn>-name = <n>-property.
+              <obj_mafn>-compiled = abap_true. " Built-in, no compilation needed
               DATA ls_obj_mafnval TYPE zif_mjs=>ty_value.
               ls_obj_mafnval-type = 4.
               ls_obj_mafnval-fn   = lr_obj_mafn.

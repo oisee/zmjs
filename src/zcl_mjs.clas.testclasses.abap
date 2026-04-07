@@ -57,6 +57,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_static_method_computed FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_object_keys FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_object_define_property FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_defprop_bundle FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_defprop_assign FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_arrow_function FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_comma_expr FOR TESTING RAISING zcx_mjs_runtime.
@@ -520,6 +521,24 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |42| ).
+  ENDMETHOD.
+
+  METHOD test_defprop_bundle.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var target = {};` && lv_nl &&
+      `var all = { At: () => "Value" };` && lv_nl &&
+      `var __defProp = Object.defineProperty;` && lv_nl &&
+      `try {` && lv_nl &&
+      `  console.log("DefProp type: " + typeof __defProp);` && lv_nl &&
+      `  __defProp(target, "At", { get: all["At"], enumerable: true });` && lv_nl &&
+      `  console.log("Target.At type: " + typeof target.At);` && lv_nl &&
+      `} catch (e) {` && lv_nl &&
+      `  console.log("Error: " + e);` && lv_nl &&
+      `}`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |DefProp type: function Target.At type: string| ).
   ENDMETHOD.
 
   METHOD test_defprop_assign.
