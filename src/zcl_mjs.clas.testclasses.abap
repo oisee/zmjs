@@ -86,6 +86,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_ends_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_in FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_defprop_getter FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_splice FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_sort FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -619,6 +621,30 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2 a b| ).
+  ENDMETHOD.
+
+  METHOD test_splice.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let res = "";` && lv_nl &&
+      `let arr = [10, 20, 30, 40];` && lv_nl &&
+      `let removed = arr.splice(1, 2, 99);` && lv_nl &&
+      `res = removed.length + " " + removed[0] + " " + arr.length + " " + arr[1];` && lv_nl &&
+      `console.log(res);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2 20 3 99` ).
+  ENDMETHOD.
+
+  METHOD test_sort.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let arr = [30, 10, 20];` && lv_nl &&
+      `arr.sort();` && lv_nl &&
+      `console.log(arr[0] + " " + arr[1] + " " + arr[2]);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `10 20 30` ).
   ENDMETHOD.
 
   METHOD test262.
