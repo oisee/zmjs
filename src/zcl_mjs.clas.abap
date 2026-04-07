@@ -52,7 +52,9 @@ CLASS zcl_mjs DEFINITION PUBLIC.
     CLASS-METHODS eval_property_access
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_prop       TYPE string
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+                io_env        TYPE REF TO zcl_mjs_env OPTIONAL
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_method_call
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_method     TYPE string
@@ -1704,8 +1706,10 @@ CLASS zcl_mjs IMPLEMENTATION.
                     IF lr_ef_dp_get IS BOUND.
                       DATA(ls_ef_get_val) = unbox_value( lr_ef_dp_get ).
                       IF ls_ef_get_val-type = 4.
-                        DATA(ls_ef_gv) = call_function( ir_fn = ls_ef_get_val-fn it_args = VALUE #( ) io_env = io_env ).
-                        ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = box_value( ls_ef_gv ) ).
+                        DATA ls_ef_get_wrap TYPE zif_mjs=>ty_value.
+                        ls_ef_get_wrap-type = 10.
+                        ls_ef_get_wrap-fn   = ls_ef_get_val-fn.
+                        ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = box_value( ls_ef_get_wrap ) ).
                       ENDIF.
                     ENDIF.
                   ENDIF.
@@ -1751,8 +1755,10 @@ CLASS zcl_mjs IMPLEMENTATION.
                   IF lr_f_dp_get IS BOUND.
                     DATA(ls_f_get_val) = unbox_value( lr_f_dp_get ).
                     IF ls_f_get_val-type = 4.
-                      DATA(ls_f_gv) = call_function( ir_fn = ls_f_get_val-fn it_args = VALUE #( ) io_env = io_env ).
-                      ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = box_value( ls_f_gv ) ).
+                      DATA ls_f_get_wrap TYPE zif_mjs=>ty_value.
+                      ls_f_get_wrap-type = 10.
+                      ls_f_get_wrap-fn   = ls_f_get_val-fn.
+                      ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = box_value( ls_f_get_wrap ) ).
                     ENDIF.
                   ENDIF.
                 ENDIF.
@@ -1800,10 +1806,10 @@ CLASS zcl_mjs IMPLEMENTATION.
                     IF lr_dp_get IS BOUND.
                       DATA(ls_get_val) = unbox_value( lr_dp_get ).
                       IF ls_get_val-type = 4.
-                        " Poor man's getter: evaluate it NOW and set as value
-                        " Better than nothing for bundle.js initialization patterns
-                        DATA(ls_gv) = call_function( ir_fn = ls_get_val-fn it_args = VALUE #( ) io_env = io_env ).
-                        ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = box_value( ls_gv ) ).
+                        DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
+                        ls_getter_wrap-type = 10.
+                        ls_getter_wrap-fn   = ls_get_val-fn.
+                        ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = box_value( ls_getter_wrap ) ).
                       ENDIF.
                     ENDIF.
                   ENDIF.
@@ -1943,7 +1949,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             READ TABLE <n>-args INDEX lv_di + 1 INTO lr_dtarget.
             FIELD-SYMBOLS <dtarget> TYPE zif_mjs=>ty_node.
             ASSIGN lr_dtarget->* TO <dtarget>.
-            DATA(ls_dval) = eval_property_access( is_obj = ls_rhs iv_prop = lv_ds_key ).
+            DATA(ls_dval) = eval_property_access( is_obj = ls_rhs iv_prop = lv_ds_key io_env = io_env ).
             io_env->define( iv_name = <dtarget>-str is_val = ls_dval ).
             lv_di = lv_di + 2.
           ENDWHILE.
@@ -2009,7 +2015,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF <n>-prop_expr IS BOUND.
             lv_paprop = to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
           ENDIF.
-          rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop ).
+          rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop io_env = io_env ).
         ENDIF.
 
       WHEN zif_mjs=>c_node_typeof.
@@ -2209,6 +2215,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         lr_pv = is_obj-obj->get( iv_prop ).
         IF lr_pv IS BOUND.
           rs_val = unbox_value( lr_pv ).
+          IF rs_val-type = 10 AND io_env IS BOUND.
+            rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env ir_this = box_value( is_obj ) ).
+          ENDIF.
         ELSE.
           rs_val = undefined_val( ).
         ENDIF.
@@ -2271,7 +2280,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
   METHOD eval_method_call.
     " check if method is defined on the object it was called on, or its prototype
-    DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method ).
+    DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method io_env = io_env ).
 
     IF ls_mval-type = 4 AND ls_mval-fn IS BOUND.
       DATA lr_this TYPE REF TO data.

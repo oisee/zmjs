@@ -85,6 +85,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_string_starts_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_string_ends_with FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_for_in FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_defprop_getter FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -521,6 +522,20 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |42| ).
+  ENDMETHOD.
+
+  METHOD test_defprop_getter.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let obj = {};` && lv_nl &&
+      `Object.defineProperty(obj, 'a', {` && lv_nl &&
+      `    get: () => { return x; }` && lv_nl &&
+      `});` && lv_nl &&
+      `let x = 1;` && lv_nl &&
+      `console.log(obj.a);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |1| ).
   ENDMETHOD.
 
   METHOD test_defprop_bundle.
