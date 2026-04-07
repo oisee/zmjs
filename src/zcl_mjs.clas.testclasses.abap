@@ -36,6 +36,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_trim FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_trim_end FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_super_method_call FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_plus_one FOR TESTING RAISING zcx_mjs_runtime.
@@ -412,6 +413,21 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |hello| ).
+  ENDMETHOD.
+
+  METHOD test_super_method_call.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `class Base {` && lv_nl &&
+      `  greet() { return "Hello"; }` && lv_nl &&
+      `}` && lv_nl &&
+      `class Child extends Base {` && lv_nl &&
+      `  greet() { return super.greet() + " World"; }` && lv_nl &&
+      `}` && lv_nl &&
+      `console.log(new Child().greet());`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |Hello World| ).
   ENDMETHOD.
 
   METHOD test_trim.
