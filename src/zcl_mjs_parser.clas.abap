@@ -783,6 +783,20 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD parse_unary.
+    IF peek( )-kind = 3 AND ( peek( )-val = `++` OR peek( )-val = `--` ).
+      DATA(lv_op_inc) = next( )-val.
+      DATA(lr_operand_inc) = parse_unary( ).
+      DATA lr_n_inc TYPE REF TO zif_mjs=>ty_node.
+      CREATE DATA lr_n_inc.
+      IF lv_op_inc = `++`.
+        lr_n_inc->kind = zif_mjs=>c_node_inc.
+      ELSE.
+        lr_n_inc->kind = zif_mjs=>c_node_dec.
+      ENDIF.
+      lr_n_inc->left = lr_operand_inc.
+      rr_node = lr_n_inc.
+      RETURN.
+    ENDIF.
     IF peek( )-kind = 3 AND ( peek( )-val = `-` OR peek( )-val = `!` ).
       DATA(lv_op) = next( )-val.
       DATA(lr_operand) = parse_unary( ).
@@ -997,6 +1011,17 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           lr_ecall->args = lt_efargs.
           lr_left = lr_ecall.
         ENDIF.
+      ELSEIF peek( )-kind = 3 AND ( peek( )-val = `++` OR peek( )-val = `--` ).
+        DATA(lv_post_op) = next( )-val.
+        DATA lr_post TYPE REF TO zif_mjs=>ty_node.
+        CREATE DATA lr_post.
+        IF lv_post_op = `++`.
+          lr_post->kind = zif_mjs=>c_node_post_inc.
+        ELSE.
+          lr_post->kind = zif_mjs=>c_node_post_dec.
+        ENDIF.
+        lr_post->left = lr_left.
+        lr_left = lr_post.
       ELSE.
         lv_continue = abap_false.
       ENDIF.

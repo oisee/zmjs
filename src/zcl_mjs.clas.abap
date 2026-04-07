@@ -559,7 +559,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
            OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`
-           OR lv_two = `=>` OR lv_two = `+=`.
+           OR lv_two = `=>` OR lv_two = `+=` OR lv_two = `-=`
+           OR lv_two = `++` OR lv_two = `--`.
           IF lv_i + 2 < lv_len AND
              ( lv_two = `==` OR lv_two = `!=` ).
             lv_three = iv_src+lv_i(3).
@@ -1273,6 +1274,48 @@ CLASS zcl_mjs IMPLEMENTATION.
           WHEN `void`.
             " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
+
+      WHEN zif_mjs=>c_node_inc OR zif_mjs=>c_node_dec
+        OR zif_mjs=>c_node_post_inc OR zif_mjs=>c_node_post_dec.
+        FIELD-SYMBOLS <ln_inc> TYPE zif_mjs=>ty_node.
+        ASSIGN <n>-left->* TO <ln_inc>.
+        " Only simple identifier increment supported for now
+        IF sy-subrc = 0 AND <ln_inc>-kind = zif_mjs=>c_node_ident.
+          DATA ls_v_inc TYPE zif_mjs=>ty_value.
+          IF <ln_inc>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+            READ TABLE io_env->slots INDEX <ln_inc>-slot INTO ls_v_inc.
+          ELSE.
+            ls_v_inc = io_env->get( <ln_inc>-str ).
+          ENDIF.
+
+          DATA ls_v_one TYPE zif_mjs=>ty_value.
+          ls_v_one-type = 1.
+          ls_v_one-num  = 1.
+
+          DATA lv_op_inc TYPE string.
+          IF <n>-kind = zif_mjs=>c_node_inc OR <n>-kind = zif_mjs=>c_node_post_inc.
+            lv_op_inc = `+`.
+          ELSE.
+            lv_op_inc = `-`.
+          ENDIF.
+
+          DATA(ls_v_new) = eval_bin_op( iv_op = lv_op_inc is_left = ls_v_inc is_right = ls_v_one io_env = io_env ).
+
+          IF <ln_inc>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+            READ TABLE io_env->slots INDEX <ln_inc>-slot ASSIGNING FIELD-SYMBOL(<v_asgn_inc>).
+            IF sy-subrc = 0.
+              <v_asgn_inc> = ls_v_new.
+            ENDIF.
+          ELSE.
+            io_env->set( iv_name = <ln_inc>-str is_val = ls_v_new ).
+          ENDIF.
+
+          IF <n>-kind = zif_mjs=>c_node_inc OR <n>-kind = zif_mjs=>c_node_dec.
+            rs_val = ls_v_new.
+          ELSE.
+            rs_val = ls_v_inc.
+          ENDIF.
+        ENDIF.
 
       WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         DATA(ls_aval) = eval_node( ir_node = <n>-right io_env = io_env ).
