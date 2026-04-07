@@ -81,6 +81,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_for_loop_inc FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_to_upper_case FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_to_lower_case FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_starts_with FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_string_ends_with FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -539,6 +541,34 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( |console.log("HELLO".toLowerCase())| ) )
       exp = |hello| ).
+  ENDMETHOD.
+
+  METHOD test_string_starts_with.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("hello world".startsWith("hello"));` && lv_nl &&
+      `console.log("hello world".startsWith("world"));` && lv_nl &&
+      `console.log("hello world".startsWith("world", 6));` && lv_nl &&
+      `console.log("hello world".startsWith("hello", 1));` && lv_nl &&
+      `console.log("".startsWith(""));` && lv_nl &&
+      `console.log("abc".startsWith(""));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |true false true false true true| ).
+  ENDMETHOD.
+
+  METHOD test_string_ends_with.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `console.log("hello world".endsWith("world"));` && lv_nl &&
+      `console.log("hello world".endsWith("hello"));` && lv_nl &&
+      `console.log("hello world".endsWith("hello", 5));` && lv_nl &&
+      `console.log("hello world".endsWith("world", 10));` && lv_nl &&
+      `console.log("".endsWith(""));` && lv_nl &&
+      `console.log("abc".endsWith(""));`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |true false true false true true| ).
   ENDMETHOD.
 
   METHOD test262.
