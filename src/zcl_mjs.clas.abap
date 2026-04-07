@@ -1764,6 +1764,26 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
       WHEN zif_mjs=>c_node_object.
+        IF <n>-op = `D`. " Destructuring assignment pattern
+          DATA(ls_rhs) = eval_node( ir_node = <n>-right io_env = io_env ).
+          DATA lv_di TYPE i VALUE 1.
+          WHILE lv_di <= lines( <n>-args ).
+            DATA lr_dsource TYPE REF TO data.
+            READ TABLE <n>-args INDEX lv_di INTO lr_dsource.
+            FIELD-SYMBOLS <dsource> TYPE zif_mjs=>ty_node.
+            ASSIGN lr_dsource->* TO <dsource>.
+            DATA(lv_ds_key) = <dsource>-str.
+            DATA lr_dtarget TYPE REF TO data.
+            READ TABLE <n>-args INDEX lv_di + 1 INTO lr_dtarget.
+            FIELD-SYMBOLS <dtarget> TYPE zif_mjs=>ty_node.
+            ASSIGN lr_dtarget->* TO <dtarget>.
+            DATA(ls_dval) = eval_property_access( is_obj = ls_rhs iv_prop = lv_ds_key ).
+            io_env->define( iv_name = <dtarget>-str is_val = ls_dval ).
+            lv_di = lv_di + 2.
+          ENDWHILE.
+          rs_val = ls_rhs.
+          RETURN.
+        ENDIF.
         DATA ls_obj TYPE zif_mjs=>ty_value.
         ls_obj = object_val( ).
         DATA(ls_obj_bt) = io_env->get( `Object` ).
