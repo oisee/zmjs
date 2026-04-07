@@ -1274,19 +1274,6 @@ CLASS zcl_mjs IMPLEMENTATION.
             " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
 
-      WHEN zif_mjs=>c_node_inc OR zif_mjs=>c_node_dec
-        OR zif_mjs=>c_node_post_inc OR zif_mjs=>c_node_post_dec.
-        FIELD-SYMBOLS <ln_inc> TYPE zif_mjs=>ty_node.
-        ASSIGN <n>-left->* TO <ln_inc>.
-        IF sy-subrc = 0 AND <ln_inc>-kind = zif_mjs=>c_node_ident.
-          DATA(ls_v_inc) = io_env->get( <ln_inc>-str ).
-          DATA(ls_v_one) = VALUE zif_mjs=>ty_value( type = 1 num = 1 ).
-          DATA(lv_op_inc) = COND #( WHEN <n>-kind = zif_mjs=>c_node_inc OR <n>-kind = zif_mjs=>c_node_post_inc THEN `+` ELSE `-` ).
-          DATA(ls_v_new) = eval_bin_op( iv_op = lv_op_inc is_left = ls_v_inc is_right = ls_v_one io_env = io_env ).
-          io_env->set( iv_name = <ln_inc>-str is_val = ls_v_new ).
-          rs_val = COND #( WHEN <n>-kind = zif_mjs=>c_node_inc OR <n>-kind = zif_mjs=>c_node_dec THEN ls_v_new ELSE ls_v_inc ).
-        ENDIF.
-
       WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         DATA(ls_aval) = eval_node( ir_node = <n>-right io_env = io_env ).
         DATA(ls_curr) = VALUE zif_mjs=>ty_value( ).
@@ -2860,4 +2847,3 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
 ENDCLASS.
-
