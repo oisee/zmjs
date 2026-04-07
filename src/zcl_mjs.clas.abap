@@ -640,6 +640,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                   AND ls_ptok-val <> `throw`
                   AND ls_ptok-val <> `case`
                   AND ls_ptok-val <> `delete`
+                  AND ls_ptok-val <> `new`
                   AND ls_ptok-val <> `void` )
              OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
             lv_rxis = abap_false.

@@ -86,12 +86,14 @@ CLASS lcl_test IMPLEMENTATION.
       `class Point { constructor(x, y) { this.x = x; this.y = y; } sum() { return this.x + this.y; } }` && lv_nl &&
       `let p = new Point(3, 4);` && lv_nl &&
       `assert(p.sum() === 7, "class method");` && lv_nl &&
+      `var instance = 60; var of = 6; var g = 2; var notRegExp = instance/of/g;` && lv_nl &&
+      `assert(notRegExp === 5, "division vs regex");` && lv_nl &&
       `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
 
     DATA(lv_r) = zcl_mjs=>eval( lv_js ).
     cl_abap_unit_assert=>assert_true(
-      act = boolc( lv_r CS |PASS=45 FAIL=0| )
-      msg = |Test262: expected PASS=45 FAIL=0, got: { lv_r }| ).
+      act = boolc( lv_r CS |PASS=46 FAIL=0| )
+      msg = |Test262: expected PASS=46 FAIL=0, got: { lv_r }| ).
   ENDMETHOD.
 
   METHOD bench_fib.
