@@ -530,14 +530,15 @@ CLASS ltcl_test IMPLEMENTATION.
       `var all = { At: () => "Value" };` && lv_nl &&
       `var __defProp = Object.defineProperty;` && lv_nl &&
       `try {` && lv_nl &&
+      `  console.log("DefProp type: " + typeof __defProp);` && lv_nl &&
       `  __defProp(target, "At", { get: all["At"], enumerable: true });` && lv_nl &&
-      `  console.log(typeof target.At);` && lv_nl &&
+      `  console.log("Target.At type: " + typeof target.At);` && lv_nl &&
       `} catch (e) {` && lv_nl &&
-      `  console.log("REPRODUCTION SUCCESS: " + e);` && lv_nl &&
+      `  console.log("Error: " + e);` && lv_nl &&
       `}`.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
-      exp = |string| ).
+      exp = |DefProp type: function Target.At type: string| ).
   ENDMETHOD.
 
   METHOD test_defprop_assign.
