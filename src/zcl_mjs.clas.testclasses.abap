@@ -75,6 +75,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_for_of_map FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_substr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_lexer_loop FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_instanceof FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1115,6 +1116,23 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |BEFORE LOOP IN LOOP AFTER LOOP| ).
+  ENDMETHOD.
+
+  METHOD test_instanceof.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `class A {}` && lv_nl &&
+      `class B extends A {}` && lv_nl &&
+      `let a = new A();` && lv_nl &&
+      `let b = new B();` && lv_nl &&
+      `console.log(a instanceof A);` && lv_nl &&
+      `console.log(b instanceof B);` && lv_nl &&
+      `console.log(b instanceof A);` && lv_nl &&
+      `console.log(a instanceof B);` && lv_nl &&
+      `console.log({} instanceof Object);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |true true true false true| ).
   ENDMETHOD.
 
 ENDCLASS.

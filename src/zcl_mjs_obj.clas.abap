@@ -8,6 +8,7 @@ CLASS zcl_mjs_obj DEFINITION PUBLIC.
       tt_props TYPE HASHED TABLE OF ty_prop WITH UNIQUE KEY key.
 
     DATA props TYPE tt_props.
+    DATA proto TYPE REF TO zcl_mjs_obj.
 
     METHODS get
       IMPORTING iv_key         TYPE string
