@@ -2210,6 +2210,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDCASE.
       WHEN 2.
         CASE iv_method.
+          WHEN `toUpperCase`.
+            rs_val = string_val( to_upper( is_obj-str ) ).
+          WHEN `toLowerCase`.
+            rs_val = string_val( to_lower( is_obj-str ) ).
           WHEN `charAt`.
             IF lines( it_args ) > 0.
               DATA ls_cha TYPE zif_mjs=>ty_value.
