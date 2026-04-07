@@ -2338,8 +2338,55 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = array_val( VALUE #( ) ).
             ENDIF.
+          WHEN `splice`.
+            DATA lt_spl_args TYPE zif_mjs=>tt_value_slots.
+            lt_spl_args = it_args.
+            DATA(lv_spl_len) = is_obj-arr->length( ).
+            DATA lv_spl_start TYPE i VALUE 0.
+            IF lines( lt_spl_args ) >= 1.
+              lv_spl_start = to_number( lt_spl_args[ 1 ] ).
+              IF lv_spl_start < 0.
+                lv_spl_start = lv_spl_start + lv_spl_len.
+                IF lv_spl_start < 0. lv_spl_start = 0. ENDIF.
+              ELSEIF lv_spl_start > lv_spl_len.
+                lv_spl_start = lv_spl_len.
+              ENDIF.
+            ENDIF.
+            DATA(lv_delete_count) = lv_spl_len - lv_spl_start.
+            IF lines( lt_spl_args ) >= 2.
+              lv_delete_count = to_number( lt_spl_args[ 2 ] ).
+              IF lv_delete_count < 0. lv_delete_count = 0. ENDIF.
+              IF lv_delete_count > lv_spl_len - lv_spl_start.
+                lv_delete_count = lv_spl_len - lv_spl_start.
+              ENDIF.
+            ENDIF.
+
+            DATA lt_removed TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            DATA(lv_i) = 0.
+            WHILE lv_i < lv_delete_count.
+              APPEND is_obj-arr->items[ lv_spl_start + 1 ] TO lt_removed.
+              DELETE is_obj-arr->items INDEX lv_spl_start + 1.
+              lv_i = lv_i + 1.
+            ENDWHILE.
+
+            IF lines( lt_spl_args ) > 2.
+              DATA(lv_ins_idx) = lv_spl_start + 1.
+              LOOP AT lt_spl_args INTO DATA(ls_spl_a) FROM 3.
+                INSERT box_value( ls_spl_a ) INTO is_obj-arr->items INDEX lv_ins_idx.
+                lv_ins_idx = lv_ins_idx + 1.
+              ENDLOOP.
+            ENDIF.
+            rs_val = array_val( lt_removed ).
+            RETURN.
+          WHEN `sort`.
+            " rudimentary sort for tests
+            SORT is_obj-arr->items.
+            rs_val = is_obj.
+            RETURN.
           WHEN OTHERS.
-          " todo, throw?
+            RAISE EXCEPTION TYPE zcx_mjs_runtime
+              EXPORTING
+                iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
       WHEN 2.
         CASE iv_method.
