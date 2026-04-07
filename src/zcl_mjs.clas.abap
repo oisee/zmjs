@@ -2214,6 +2214,67 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val = string_val( to_upper( is_obj-str ) ).
           WHEN `toLowerCase`.
             rs_val = string_val( to_lower( is_obj-str ) ).
+          WHEN `startsWith`.
+            IF lines( it_args ) > 0.
+              DATA(ls_sw1) = VALUE zif_mjs=>ty_value( ).
+              DATA(ls_sw2) = VALUE zif_mjs=>ty_value( ).
+              READ TABLE it_args INDEX 1 INTO ls_sw1.
+              DATA(lv_sw_search) = to_string( ls_sw1 ).
+              DATA(lv_sw_pos) = 0.
+              IF lines( it_args ) >= 2.
+                READ TABLE it_args INDEX 2 INTO ls_sw2.
+                lv_sw_pos = to_number( ls_sw2 ).
+              ENDIF.
+              IF lv_sw_pos < 0.
+                lv_sw_pos = 0.
+              ENDIF.
+              IF lv_sw_pos > strlen( is_obj-str ).
+                lv_sw_pos = strlen( is_obj-str ).
+              ENDIF.
+              IF lv_sw_search = ``.
+                rs_val = bool_val( abap_true ).
+              ELSEIF lv_sw_pos + strlen( lv_sw_search ) > strlen( is_obj-str ).
+                rs_val = bool_val( abap_false ).
+              ELSEIF substring( val = is_obj-str
+                                off = lv_sw_pos
+                                len = strlen( lv_sw_search ) ) = lv_sw_search.
+                rs_val = bool_val( abap_true ).
+              ELSE.
+                rs_val = bool_val( abap_false ).
+              ENDIF.
+            ELSE.
+              rs_val = bool_val( abap_false ).
+            ENDIF.
+          WHEN `endsWith`.
+            IF lines( it_args ) > 0.
+              DATA(ls_ew1) = VALUE zif_mjs=>ty_value( ).
+              DATA(ls_ew2) = VALUE zif_mjs=>ty_value( ).
+              READ TABLE it_args INDEX 1 INTO ls_ew1.
+              DATA(lv_ew_search) = to_string( ls_ew1 ).
+              DATA(lv_ew_len) = strlen( is_obj-str ).
+              IF lines( it_args ) >= 2.
+                READ TABLE it_args INDEX 2 INTO ls_ew2.
+                lv_ew_len = to_number( ls_ew2 ).
+              ENDIF.
+              IF lv_ew_len < 0.
+                lv_ew_len = 0.
+              ELSEIF lv_ew_len > strlen( is_obj-str ).
+                lv_ew_len = strlen( is_obj-str ).
+              ENDIF.
+              IF lv_ew_search = ``.
+                rs_val = bool_val( abap_true ).
+              ELSEIF lv_ew_len < strlen( lv_ew_search ).
+                rs_val = bool_val( abap_false ).
+              ELSEIF substring( val = is_obj-str
+                                off = lv_ew_len - strlen( lv_ew_search )
+                                len = strlen( lv_ew_search ) ) = lv_ew_search.
+                rs_val = bool_val( abap_true ).
+              ELSE.
+                rs_val = bool_val( abap_false ).
+              ENDIF.
+            ELSE.
+              rs_val = bool_val( abap_false ).
+            ENDIF.
           WHEN `charAt`.
             IF lines( it_args ) > 0.
               DATA ls_cha TYPE zif_mjs=>ty_value.
