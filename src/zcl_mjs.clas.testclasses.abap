@@ -27,6 +27,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_optional_chain_arr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_optional_chain_fn FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_substring_one_arg FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_plus_equals FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_extends FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expression FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_class_expr_extends FOR TESTING RAISING zcx_mjs_runtime.
@@ -36,6 +37,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_class_expr_super FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_tostring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_function_props FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_function_plus_one FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_func_tostring_ovr FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_prim FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_obj FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_json_stringify_arr FOR TESTING RAISING zcx_mjs_runtime.
@@ -350,6 +353,17 @@ CLASS ltcl_test IMPLEMENTATION.
       exp = |world| ).
   ENDMETHOD.
 
+  METHOD test_plus_equals.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let x = 10;` && lv_nl &&
+      `x += 5;` && lv_nl &&
+      `console.log(x);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |15| ).
+  ENDMETHOD.
+
   METHOD test_string_replace.
     DATA(lv_nl) = cl_abap_char_utilities=>newline.
     DATA(lv_js) =
@@ -612,6 +626,28 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = `42` ).
+  ENDMETHOD.
+
+  METHOD test_function_plus_one.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function f() { return 0; }` && lv_nl &&
+      `f.valueOf = function() { return 1; };` && lv_nl &&
+      `console.log(f + 1);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2` ).
+  ENDMETHOD.
+
+  METHOD test_func_tostring_ovr.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function f3(){ return 0; }` && lv_nl &&
+      `f3.toString = function() {return 1;};` && lv_nl &&
+      `console.log(1 + f3);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = `2` ).
   ENDMETHOD.
 
   METHOD test_json_stringify_prim.

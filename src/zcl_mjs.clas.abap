@@ -46,7 +46,9 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING iv_op         TYPE string
                 is_left       TYPE zif_mjs=>ty_value
                 is_right      TYPE zif_mjs=>ty_value
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+                io_env        TYPE REF TO zcl_mjs_env
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_property_access
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_prop       TYPE string
@@ -56,7 +58,7 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 iv_method     TYPE string
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
-                ir_obj_node   TYPE REF TO data
+                ir_obj_node   TYPE REF TO data OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
     CLASS-METHODS call_function
@@ -552,7 +554,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
            OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`
-           OR lv_two = `=>`.
+           OR lv_two = `=>` OR lv_two = `+=`.
           IF lv_i + 2 < lv_len AND
              ( lv_two = `==` OR lv_two = `!=` ).
             lv_three = iv_src+lv_i(3).
@@ -638,6 +640,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                   AND ls_ptok-val <> `throw`
                   AND ls_ptok-val <> `case`
                   AND ls_ptok-val <> `delete`
+                  AND ls_ptok-val <> `new`
                   AND ls_ptok-val <> `void` )
              OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
             lv_rxis = abap_false.
@@ -1131,7 +1134,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         annotate_slots( ir_node = <n>-right ir_map = ir_map ).
 
-      WHEN zif_mjs=>c_node_assign.
+      WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         READ TABLE ir_map->* WITH TABLE KEY name = <n>-str ASSIGNING FIELD-SYMBOL(<sm3>).
         IF sy-subrc = 0.
           <n>-slot    = <sm3>-slot.
@@ -1252,7 +1255,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         DATA(ls_bl) = eval_node( ir_node = <n>-left io_env = io_env ).
         DATA(ls_br) = eval_node( ir_node = <n>-right io_env = io_env ).
-        rs_val = eval_bin_op( iv_op = <n>-op is_left = ls_bl is_right = ls_br ).
+        rs_val = eval_bin_op( iv_op = <n>-op is_left = ls_bl is_right = ls_br io_env = io_env ).
 
       WHEN zif_mjs=>c_node_unaryop.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
@@ -1266,8 +1269,18 @@ CLASS zcl_mjs IMPLEMENTATION.
             " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
 
-      WHEN zif_mjs=>c_node_assign.
+      WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
         DATA(ls_aval) = eval_node( ir_node = <n>-right io_env = io_env ).
+        DATA(ls_curr) = VALUE zif_mjs=>ty_value( ).
+        IF <n>-kind = zif_mjs=>c_node_assign_add.
+          IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
+            READ TABLE io_env->slots INDEX <n>-slot INTO ls_curr.
+          ELSE.
+            ls_curr = io_env->get( <n>-str ).
+          ENDIF.
+          ls_aval = eval_bin_op( iv_op = `+` is_left = ls_curr is_right = ls_aval io_env = io_env ).
+        ENDIF.
+
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_asgn>).
           IF sy-subrc = 0. <sv_asgn> = ls_aval. ENDIF.
@@ -2057,29 +2070,26 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_method_call.
-    CASE is_obj-type.
-      WHEN 6.
-        DATA lr_meth TYPE REF TO data.
-        lr_meth = is_obj-obj->get( iv_method ).
-        IF lr_meth IS BOUND.
-          DATA(ls_mval) = unbox_value( lr_meth ).
-          IF ls_mval-type = 4 AND ls_mval-fn IS BOUND.
-            DATA lr_this TYPE REF TO data.
-            lr_this = box_value( is_obj ).
-            rs_val = call_function( ir_fn = ls_mval-fn it_args = it_args io_env = io_env
-                                    ir_this = lr_this ).
-            IF ir_obj_node IS BOUND.
-              FIELD-SYMBOLS <on> TYPE zif_mjs=>ty_node.
-              ASSIGN ir_obj_node->* TO <on>.
-              IF <on>-kind = zif_mjs=>c_node_ident.
-                DATA(ls_updated) = unbox_value( lr_this ).
-                io_env->set( iv_name = <on>-str is_val = ls_updated ).
-              ENDIF.
-            ENDIF.
-          ENDIF.
-        ELSE.
-          " todo, throw?
+    " check if method is defined on the object it was called on, or its prototype
+    DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method ).
+
+    IF ls_mval-type = 4 AND ls_mval-fn IS BOUND.
+      DATA lr_this TYPE REF TO data.
+      lr_this = box_value( is_obj ).
+      rs_val = call_function( ir_fn = ls_mval-fn it_args = it_args io_env = io_env
+                              ir_this = lr_this ).
+      IF ir_obj_node IS BOUND.
+        FIELD-SYMBOLS <on> TYPE zif_mjs=>ty_node.
+        ASSIGN ir_obj_node->* TO <on>.
+        IF sy-subrc = 0 AND <on>-kind = zif_mjs=>c_node_ident.
+          DATA(ls_updated) = unbox_value( lr_this ).
+          io_env->set( iv_name = <on>-str is_val = ls_updated ).
         ENDIF.
+      ENDIF.
+      RETURN.
+    ENDIF.
+
+    CASE is_obj-type.
       WHEN 7.
         CASE iv_method.
           WHEN `push`.
@@ -2089,6 +2099,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               is_obj-arr->push( box_value( ls_push_arg ) ).
               rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
             ENDIF.
+            RETURN.
           WHEN `map`.
             IF lines( it_args ) > 0.
               DATA ls_map_cb TYPE zif_mjs=>ty_value.
@@ -2383,13 +2394,96 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_bin_op.
-    IF iv_op = `+` AND ( is_left-type = 2 OR is_right-type = 2
-                      OR is_left-type = 4 OR is_right-type = 4
-                      OR is_left-type = 6 OR is_right-type = 6 ).
-      rs_val-type = 2.
-      rs_val-str  = to_string( is_left ) && to_string( is_right ).
+    IF iv_op = `+`.
+      DATA ls_lval TYPE zif_mjs=>ty_value.
+      DATA ls_rval TYPE zif_mjs=>ty_value.
+      ls_lval = is_left.
+      IF ls_lval-type = 4.
+        DATA(ls_l_v) = eval_method_call(
+          is_obj    = ls_lval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_l_v-type = 4 OR ( ls_l_v-type = 2 AND ls_l_v-str CP `function *` ).
+          ls_lval = eval_method_call(
+            is_obj    = is_left
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSEIF ls_l_v-type = 0 OR ls_l_v-type = 6 OR ls_l_v-type = 5.
+          ls_lval = eval_method_call(
+            is_obj    = is_left
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSE.
+          ls_lval = ls_l_v.
+        ENDIF.
+      ELSEIF ls_lval-type = 6.
+        ls_l_v = eval_method_call(
+          is_obj    = ls_lval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_l_v-type = 0 OR ls_l_v-type = 4 OR ls_l_v-type = 6 OR ls_l_v-type = 5.
+          ls_lval = eval_method_call(
+            is_obj    = is_left
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSE.
+          ls_lval = ls_l_v.
+        ENDIF.
+      ENDIF.
+      ls_rval = is_right.
+      IF ls_rval-type = 4.
+        DATA(ls_r_v) = eval_method_call(
+          is_obj    = ls_rval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_r_v-type = 4 OR ( ls_r_v-type = 2 AND ls_r_v-str CP `function *` ).
+          ls_rval = eval_method_call(
+            is_obj    = is_right
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSEIF ls_r_v-type = 0 OR ls_r_v-type = 6 OR ls_r_v-type = 5.
+          ls_rval = eval_method_call(
+            is_obj    = is_right
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSE.
+          ls_rval = ls_r_v.
+        ENDIF.
+      ELSEIF ls_rval-type = 6.
+        ls_r_v = eval_method_call(
+          is_obj    = ls_rval
+          iv_method = `valueOf`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+        IF ls_r_v-type = 0 OR ls_r_v-type = 4 OR ls_r_v-type = 6 OR ls_r_v-type = 5.
+          ls_rval = eval_method_call(
+            is_obj    = is_right
+            iv_method = `toString`
+            it_args   = VALUE #( )
+            io_env    = io_env ).
+        ELSE.
+          ls_rval = ls_r_v.
+        ENDIF.
+      ENDIF.
+
+      IF ls_lval-type = 2 OR ls_rval-type = 2.
+        rs_val-type = 2.
+        rs_val-str  = to_string( ls_lval ) && to_string( ls_rval ).
+        RETURN.
+      ENDIF.
+      rs_val-type = 1.
+      rs_val-num = to_number( ls_lval ) + to_number( ls_rval ).
       RETURN.
     ENDIF.
+
     CASE iv_op.
       WHEN `===`.
         rs_val-type = 3.
@@ -2432,25 +2526,65 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         " bool coercion — convert bool side to number and retry
         IF is_left-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right io_env = io_env ).
           RETURN.
         ENDIF.
         IF is_right-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) io_env = io_env ).
           RETURN.
         ENDIF.
         RETURN.
       WHEN `!=`.
-        rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right ).
+        rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right io_env = io_env ).
         IF rs_val-num = 1. rs_val-num = 0. ELSE. rs_val-num = 1. ENDIF.
         RETURN.
     ENDCASE.
     DATA lv_a TYPE f.
     DATA lv_b TYPE f.
-    lv_a = to_number( is_left ).
-    lv_b = to_number( is_right ).
+
+    DATA ls_la TYPE zif_mjs=>ty_value.
+    DATA ls_ra TYPE zif_mjs=>ty_value.
+    ls_la = is_left.
+    IF ls_la-type = 4 OR ls_la-type = 6.
+      DATA(ls_la_v) = eval_method_call(
+        is_obj    = ls_la
+        iv_method = `valueOf`
+        it_args   = VALUE #( )
+        io_env    = io_env ).
+      IF ls_la_v-type = 0 OR ls_la_v-type = 4 OR ls_la_v-type = 6 OR ls_la_v-type = 5.
+        ls_la = eval_method_call(
+          is_obj    = is_left
+          iv_method = `toString`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+      ELSE.
+        ls_la = ls_la_v.
+      ENDIF.
+    ENDIF.
+    ls_ra = is_right.
+    IF ls_ra-type = 4 OR ls_ra-type = 6.
+      DATA(ls_ra_v) = eval_method_call(
+        is_obj    = ls_ra
+        iv_method = `valueOf`
+        it_args   = VALUE #( )
+        io_env    = io_env ).
+      IF ls_ra_v-type = 0 OR ls_ra_v-type = 4 OR ls_ra_v-type = 6 OR ls_ra_v-type = 5.
+        ls_ra = eval_method_call(
+          is_obj    = is_right
+          iv_method = `toString`
+          it_args   = VALUE #( )
+          io_env    = io_env ).
+      ELSE.
+        ls_ra = ls_ra_v.
+      ENDIF.
+    ENDIF.
+
+    lv_a = to_number( ls_la ).
+    lv_b = to_number( ls_ra ).
     CASE iv_op.
       WHEN `+`.
+        " addition is already handled with special logic above, but for other operators
+        " we need to use the converted values
         rs_val-type = 1. rs_val-num = lv_a + lv_b.
       WHEN `-`.
         rs_val-type = 1. rs_val-num = lv_a - lv_b.

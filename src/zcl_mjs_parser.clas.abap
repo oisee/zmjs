@@ -551,7 +551,8 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
   METHOD parse_assign.
     DATA(lr_left) = parse_ternary( ).
-    IF peek( )-val = `=`.
+    DATA(lv_next) = peek( )-val.
+    IF lv_next = `=` OR lv_next = `+=`.
       IF lr_left IS BOUND.
         FIELD-SYMBOLS <left_node> TYPE zif_mjs=>ty_node.
         ASSIGN lr_left->* TO <left_node>.
@@ -560,7 +561,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           DATA(lr_right) = parse_expr( ).
           DATA lr_n TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_n.
-          lr_n->kind  = zif_mjs=>c_node_assign.
+          IF lv_next = `+=`.
+            lr_n->kind = zif_mjs=>c_node_assign_add.
+          ELSE.
+            lr_n->kind = zif_mjs=>c_node_assign.
+          ENDIF.
           lr_n->str   = <left_node>-str.
           lr_n->right = lr_right.
           rr_node = lr_n.
@@ -568,6 +573,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         ENDIF.
         IF <left_node>-kind = zif_mjs=>c_node_member_access.
           next( ).
+          IF lv_next = `+=`.
+            " TODO: support member assign add
+          ENDIF.
           DATA(lr_right2) = parse_expr( ).
           DATA lr_ma TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_ma.
