@@ -2455,6 +2455,34 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = array_val( VALUE #( ) ).
             ENDIF.
+          WHEN `find`.
+            rs_val = undefined_val( ).
+            IF lines( it_args ) > 0.
+              DATA ls_find_cb TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_find_cb.
+              IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
+                DATA lv_find_idx TYPE i VALUE 0.
+                LOOP AT is_obj-arr->items INTO DATA(lr_find_item).
+                  DATA ls_find_elem TYPE zif_mjs=>ty_value.
+                  ls_find_elem = unbox_value( lr_find_item ).
+                  DATA lt_find_args TYPE zif_mjs=>tt_value_slots.
+                  CLEAR lt_find_args.
+                  APPEND ls_find_elem TO lt_find_args.
+                  APPEND number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
+                  APPEND is_obj TO lt_find_args.
+                  DATA(ls_find_result) = call_function(
+                    ir_fn   = ls_find_cb-fn
+                    it_args = lt_find_args
+                    io_env  = io_env ).
+                  IF is_true( ls_find_result ) = abap_true.
+                    rs_val = ls_find_elem.
+                    RETURN.
+                  ENDIF.
+                  lv_find_idx = lv_find_idx + 1.
+                ENDLOOP.
+              ENDIF.
+            ENDIF.
+            RETURN.
           WHEN `splice`.
             DATA lt_spl_args TYPE zif_mjs=>tt_value_slots.
             lt_spl_args = it_args.

@@ -93,6 +93,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_sort FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_build_splits FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_spread FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_array_find FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_regexp FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_new_set FOR TESTING RAISING zcx_mjs_runtime.
@@ -1469,6 +1470,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |10| ).
+  ENDMETHOD.
+
+  METHOD test_array_find.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let arr = [5, 12, 8, 130, 44];` && lv_nl &&
+      `let found = arr.find(e => e > 10);` && lv_nl &&
+      `console.log(found);` && lv_nl &&
+      `let notFound = arr.find(e => e > 200);` && lv_nl &&
+      `console.log(notFound);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |12 undefined| ).
   ENDMETHOD.
 
 ENDCLASS.
