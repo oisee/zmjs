@@ -2614,6 +2614,31 @@ CLASS zcl_mjs IMPLEMENTATION.
             ELSE.
               rs_val = number_val( -1 ).
             ENDIF.
+          WHEN `lastIndexOf`.
+            IF lines( it_args ) > 0.
+              DATA ls_lioa1 TYPE zif_mjs=>ty_value.
+              DATA ls_lioa2 TYPE zif_mjs=>ty_value.
+              READ TABLE it_args INDEX 1 INTO ls_lioa1.
+              DATA(lv_lio_search) = to_string( ls_lioa1 ).
+              DATA(lv_lio_off) = strlen( is_obj-str ).
+              IF lines( it_args ) >= 2.
+                READ TABLE it_args INDEX 2 INTO ls_lioa2.
+                lv_lio_off = to_number( ls_lioa2 ).
+                IF lv_lio_off < 0.
+                  lv_lio_off = 0.
+                ELSEIF lv_lio_off > strlen( is_obj-str ).
+                  lv_lio_off = strlen( is_obj-str ).
+                ENDIF.
+              ENDIF.
+              FIND ALL OCCURRENCES OF lv_lio_search IN is_obj-str RESULTS DATA(lt_results).
+              DATA(lv_lio_res) = -1.
+              LOOP AT lt_results INTO DATA(ls_lio_res) WHERE offset <= lv_lio_off.
+                lv_lio_res = ls_lio_res-offset.
+              ENDLOOP.
+              rs_val = number_val( CONV f( lv_lio_res ) ).
+            ELSE.
+              rs_val = number_val( -1 ).
+            ENDIF.
           WHEN `substring`.
             IF lines( it_args ) >= 1.
               DATA ls_ss1 TYPE zif_mjs=>ty_value.
