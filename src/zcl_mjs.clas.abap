@@ -2726,6 +2726,20 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
             ENDWHILE.
             rs_val = string_val( lv_trim_tmp ).
+          WHEN `trimEnd`.
+            DATA lv_trim_e_tmp TYPE string.
+            DATA lv_trim_e_ch  TYPE string.
+            lv_trim_e_tmp = is_obj-str.
+            WHILE strlen( lv_trim_e_tmp ) > 0.
+              lv_trim_e_ch = substring( val = lv_trim_e_tmp off = strlen( lv_trim_e_tmp ) - 1 len = 1 ).
+              IF lv_trim_e_ch = ` ` OR lv_trim_e_ch = cl_abap_char_utilities=>horizontal_tab
+                OR lv_trim_e_ch = cl_abap_char_utilities=>newline OR lv_trim_e_ch = cl_abap_char_utilities=>cr_lf+0(1).
+                lv_trim_e_tmp = substring( val = lv_trim_e_tmp len = strlen( lv_trim_e_tmp ) - 1 ).
+              ELSE.
+                EXIT.
+              ENDIF.
+            ENDWHILE.
+            rs_val = string_val( lv_trim_e_tmp ).
           WHEN OTHERS.
             RAISE EXCEPTION TYPE zcx_mjs_runtime EXPORTING iv_error = |TypeError: { iv_method } is not a function|.
         ENDCASE.
