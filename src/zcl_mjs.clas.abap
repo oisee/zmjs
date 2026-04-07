@@ -128,6 +128,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
     DATA(ls_obj_builtin) = object_val( ).
     lo_env->define( iv_name = `Object`         is_val = ls_obj_builtin ).
+    lo_env->define( iv_name = `RegExp`         is_val = undefined_val( ) ).
     lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
     lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
     lo_env->define( iv_name = `TypeError`      is_val = undefined_val( ) ).
@@ -1642,6 +1643,20 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val = bool_val( lv_is_true ).
           RETURN.
         ENDIF.
+        IF <n>-str = `RegExp`.
+          rs_val-type = 8.
+          IF lines( lt_call_args ) >= 1.
+            rs_val-str = to_string( lt_call_args[ 1 ] ).
+          ENDIF.
+          IF lines( lt_call_args ) >= 2.
+            DATA(lv_flags) = to_string( lt_call_args[ 2 ] ).
+            DATA lv_new_rx_flagnum TYPE f VALUE 0.
+            IF lv_flags CS `g`. lv_new_rx_flagnum = lv_new_rx_flagnum + 1. ENDIF.
+            IF lv_flags CS `i`. lv_new_rx_flagnum = lv_new_rx_flagnum + 2. ENDIF.
+            rs_val-num = lv_new_rx_flagnum.
+          ENDIF.
+          RETURN.
+        ENDIF.
         IF <n>-str = `JSON.stringify`.
           DATA ls_jsin TYPE zif_mjs=>ty_value.
           IF lines( lt_call_args ) > 0.
@@ -2081,6 +2096,24 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
         IF ls_cls-type IS INITIAL AND lv_cls_name IS NOT INITIAL.
+          IF lv_cls_name = `RegExp`.
+            rs_val-type = 8.
+            DATA lt_regex_args TYPE zif_mjs=>tt_value_slots.
+            LOOP AT <n>-args INTO DATA(lr_ra).
+              APPEND eval_node( ir_node = lr_ra io_env = io_env ) TO lt_regex_args.
+            ENDLOOP.
+            IF lines( lt_regex_args ) >= 1.
+              rs_val-str = to_string( lt_regex_args[ 1 ] ).
+            ENDIF.
+            IF lines( lt_regex_args ) >= 2.
+              DATA(lv_new_flags) = to_string( lt_regex_args[ 2 ] ).
+              DATA lv_new_rx_fn TYPE f VALUE 0.
+              IF lv_new_flags CS `g`. lv_new_rx_fn = lv_new_rx_fn + 1. ENDIF.
+              IF lv_new_flags CS `i`. lv_new_rx_fn = lv_new_rx_fn + 2. ENDIF.
+              rs_val-num = lv_new_rx_fn.
+            ENDIF.
+            RETURN.
+          ENDIF.
           ls_cls = io_env->get( lv_cls_name ).
         ENDIF.
 
