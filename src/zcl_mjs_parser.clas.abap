@@ -295,8 +295,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       ENDIF.
     ENDWHILE.
     expect( `}` ).
-    expect( `=` ).
-    DATA(lr_right) = parse_expr( ).
+    DATA lr_right TYPE REF TO data.
+    IF peek( )-val = `=`.
+      next( ).
+      lr_right = parse_expr( ).
+    ENDIF.
     IF peek( )-val = `;`.
       next( ).
     ENDIF.
@@ -1252,7 +1255,28 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     expect( `[` ).
     DATA lt_elems TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
     WHILE peek( )-val <> `]` AND peek( )-kind <> 5.
-      APPEND parse_expr( ) TO lt_elems.
+      DATA(lv_is_spread) = abap_false.
+      IF peek( )-val = `.`.
+        DATA(lv_saved) = pos.
+        next( ).
+        IF peek( )-val = `.`.
+          next( ).
+          IF peek( )-val = `.`.
+            next( ).
+            lv_is_spread = abap_true.
+          ENDIF.
+        ENDIF.
+        IF lv_is_spread = abap_false.
+          pos = lv_saved.
+        ENDIF.
+      ENDIF.
+      DATA(lr_expr) = parse_expr( ).
+      IF lv_is_spread = abap_true AND lr_expr IS BOUND.
+        FIELD-SYMBOLS <expr_node> TYPE zif_mjs=>ty_node.
+        ASSIGN lr_expr->* TO <expr_node>.
+        <expr_node>-op = `SPREAD`.
+      ENDIF.
+      APPEND lr_expr TO lt_elems.
       IF peek( )-val = `,`.
         next( ).
       ENDIF.
