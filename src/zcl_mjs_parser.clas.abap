@@ -70,6 +70,8 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_throw
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS parse_call_args
+      RETURNING VALUE(rt_nodes) TYPE zif_mjs=>tt_nodes.
   PRIVATE SECTION.
     METHODS apply_postfix
       IMPORTING ir_start      TYPE REF TO data
@@ -857,13 +859,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       IF peek( )-val = `(`.
         next( ).
         DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-        WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-          APPEND parse_expr( ) TO lt_args.
-          IF peek( )-val = `,`.
-            next( ).
-          ENDIF.
-        ENDWHILE.
-        expect( `)` ).
+        lt_args = parse_call_args( ).
         DATA lr_new TYPE REF TO zif_mjs=>ty_node.
         CREATE DATA lr_new.
         lr_new->kind = zif_mjs=>c_node_new.
@@ -892,14 +888,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         IF peek( )-val = `(`.
           next( ).
           DATA lt_margs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          CLEAR lt_margs.
-          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-            APPEND parse_expr( ) TO lt_margs.
-            IF peek( )-val = `,`.
-              next( ).
-            ENDIF.
-          ENDWHILE.
-          expect( `)` ).
+          lt_margs = parse_call_args( ).
           DATA lr_mc TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_mc.
           lr_mc->kind     = zif_mjs=>c_node_method_call.
@@ -929,14 +918,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         next( ).
         next( ).
         DATA lt_eoargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-        CLEAR lt_eoargs.
-        WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-          APPEND parse_expr( ) TO lt_eoargs.
-          IF peek( )-val = `,`.
-            next( ).
-          ENDIF.
-        ENDWHILE.
-        expect( `)` ).
+        lt_eoargs = parse_call_args( ).
         DATA lr_eoc TYPE REF TO zif_mjs=>ty_node.
         CREATE DATA lr_eoc.
         lr_eoc->kind = zif_mjs=>c_node_call.
@@ -962,14 +944,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           IF peek( )-val = `(`.
             next( ).
             DATA lt_omargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-            CLEAR lt_omargs.
-            WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-              APPEND parse_expr( ) TO lt_omargs.
-              IF peek( )-val = `,`.
-                next( ).
-              ENDIF.
-            ENDWHILE.
-            expect( `)` ).
+            lt_omargs = parse_call_args( ).
             DATA lr_omc TYPE REF TO zif_mjs=>ty_node.
             CREATE DATA lr_omc.
             lr_omc->kind     = zif_mjs=>c_node_method_call.
@@ -994,14 +969,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         IF <ln>-kind = zif_mjs=>c_node_ident.
           next( ).
           DATA lt_fargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          CLEAR lt_fargs.
-          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-            APPEND parse_expr( ) TO lt_fargs.
-            IF peek( )-val = `,`.
-              next( ).
-            ENDIF.
-          ENDWHILE.
-          expect( `)` ).
+          lt_fargs = parse_call_args( ).
           DATA lr_call TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_call.
           lr_call->kind = zif_mjs=>c_node_call.
@@ -1012,14 +980,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           " Expression call: callee is any expression (e.g. IIFE)
           next( ).
           DATA lt_efargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          CLEAR lt_efargs.
-          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-            APPEND parse_expr( ) TO lt_efargs.
-            IF peek( )-val = `,`.
-              next( ).
-            ENDIF.
-          ENDWHILE.
-          expect( `)` ).
+          lt_efargs = parse_call_args( ).
           DATA lr_ecall TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_ecall.
           lr_ecall->kind = zif_mjs=>c_node_call.
@@ -1218,13 +1179,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         IF peek( )-val = `(`.
           next( ).
           DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
-            APPEND parse_expr( ) TO lt_args.
-            IF peek( )-val = `,`.
-              next( ).
-            ENDIF.
-          ENDWHILE.
-          expect( `)` ).
+          lt_args = parse_call_args( ).
           DATA lr_cl TYPE REF TO zif_mjs=>ty_node.
           CREATE DATA lr_cl.
           lr_cl->kind = zif_mjs=>c_node_call.
@@ -1366,6 +1321,37 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     lr_n->kind = zif_mjs=>c_node_throw.
     lr_n->left = lr_expr.
     rr_node = lr_n.
+  ENDMETHOD.
+
+  METHOD parse_call_args.
+    WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+      DATA(lv_is_spread) = abap_false.
+      IF peek( )-val = `.`.
+        DATA(lv_saved) = pos.
+        next( ).
+        IF peek( )-val = `.`.
+          next( ).
+          IF peek( )-val = `.`.
+            next( ).
+            lv_is_spread = abap_true.
+          ENDIF.
+        ENDIF.
+        IF lv_is_spread = abap_false.
+          pos = lv_saved.
+        ENDIF.
+      ENDIF.
+      DATA(lr_expr) = parse_expr( ).
+      IF lv_is_spread = abap_true AND lr_expr IS BOUND.
+        FIELD-SYMBOLS <expr_node> TYPE zif_mjs=>ty_node.
+        ASSIGN lr_expr->* TO <expr_node>.
+        <expr_node>-op = `SPREAD`.
+      ENDIF.
+      APPEND lr_expr TO rt_nodes.
+      IF peek( )-val = `,`.
+        next( ).
+      ENDIF.
+    ENDWHILE.
+    expect( `)` ).
   ENDMETHOD.
 
 ENDCLASS.
