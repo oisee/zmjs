@@ -8,7 +8,7 @@ INTERFACE zif_mjs PUBLIC.
       num  TYPE f,
       str  TYPE string,
       obj  TYPE REF TO zcl_mjs_obj,
-      arr  TYPE REF TO zcl_mjs_arr,
+      arr  TYPE REF TO zcl_mjs_array,
       fn   TYPE REF TO data,
     END OF ty_value,
     tt_value_slots TYPE STANDARD TABLE OF ty_value WITH DEFAULT KEY.

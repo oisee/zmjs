@@ -2295,7 +2295,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
   METHOD eval_method_call.
     DATA ls_map_cb      TYPE zif_mjs=>ty_value.
-    DATA lo_map_arr     TYPE REF TO zcl_mjs_arr.
+    DATA lo_map_arr     TYPE REF TO zcl_mjs_array.
     DATA lv_map_idx     TYPE i.
     DATA lr_map_item    TYPE REF TO data.
     DATA ls_map_elem    TYPE zif_mjs=>ty_value.
@@ -2308,7 +2308,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lt_find_args   TYPE zif_mjs=>tt_value_slots.
     DATA ls_find_result TYPE zif_mjs=>ty_value.
     DATA ls_flt_cb      TYPE zif_mjs=>ty_value.
-    DATA lo_flt_arr     TYPE REF TO zcl_mjs_arr.
+    DATA lo_flt_arr     TYPE REF TO zcl_mjs_array.
     DATA lv_flt_idx     TYPE i.
     DATA lr_flt_item    TYPE REF TO data.
     DATA ls_flt_elem    TYPE zif_mjs=>ty_value.
@@ -3004,7 +3004,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 SPLIT is_obj-str AT lv_spl_sep INTO TABLE lt_spl_items.
               ENDIF.
 
-              DATA lo_spl_arr TYPE REF TO zcl_mjs_arr.
+              DATA lo_spl_arr TYPE REF TO zcl_mjs_array.
               CREATE OBJECT lo_spl_arr.
               DATA lv_spl_count TYPE i.
               lv_spl_count = 0.
@@ -3017,7 +3017,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               rs_val-arr = lo_spl_arr.
             ELSE.
               " default: one-element array with full string
-              DATA lo_spl_def TYPE REF TO zcl_mjs_arr.
+              DATA lo_spl_def TYPE REF TO zcl_mjs_array.
               CREATE OBJECT lo_spl_def.
               lo_spl_def->push( zcl_mjs_val=>box_value( is_obj ) ).
               rs_val-type = 7.
@@ -3310,7 +3310,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
   METHOD array_from_slots.
     " Build a JS array value from a table of ty_value (no box/unbox round-trip)
-    DATA lo_arr TYPE REF TO zcl_mjs_arr.
+    DATA lo_arr TYPE REF TO zcl_mjs_array.
     CREATE OBJECT lo_arr.
     LOOP AT it_vals INTO DATA(ls_v).
       lo_arr->push( zcl_mjs_val=>box_value( ls_v ) ).
