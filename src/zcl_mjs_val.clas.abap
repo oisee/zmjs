@@ -16,6 +16,12 @@ CLASS zcl_mjs_val DEFINITION PUBLIC FINAL.
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
     CLASS-METHODS undefined_val
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+    CLASS-METHODS box_value
+      IMPORTING is_val        TYPE zif_mjs=>ty_value
+      RETURNING VALUE(rr_ref) TYPE REF TO data.
+    CLASS-METHODS unbox_value
+      IMPORTING ir_ref        TYPE REF TO data
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
 
     CLASS-METHODS is_true
       IMPORTING is_val        TYPE zif_mjs=>ty_value
@@ -65,6 +71,23 @@ CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD undefined_val.
     rs_val-type = 0.
+  ENDMETHOD.
+
+  METHOD box_value.
+    CREATE DATA rr_ref TYPE zif_mjs=>ty_value.
+    FIELD-SYMBOLS <val> TYPE zif_mjs=>ty_value.
+    ASSIGN rr_ref->* TO <val>.
+    <val> = is_val.
+  ENDMETHOD.
+
+  METHOD unbox_value.
+    IF ir_ref IS NOT BOUND.
+      rs_val-type = 0.
+      RETURN.
+    ENDIF.
+    FIELD-SYMBOLS <val> TYPE zif_mjs=>ty_value.
+    ASSIGN ir_ref->* TO <val>.
+    rs_val = <val>.
   ENDMETHOD.
 
   METHOD is_true.
