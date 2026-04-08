@@ -10,33 +10,6 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING iv_src           TYPE string
       RETURNING VALUE(rt_tokens) TYPE zif_mjs=>tt_tokens.
 
-    CLASS-METHODS number_val
-      IMPORTING iv_num        TYPE f
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-    CLASS-METHODS string_val
-      IMPORTING iv_str        TYPE string
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-    CLASS-METHODS bool_val
-      IMPORTING iv_bool       TYPE abap_bool
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-    CLASS-METHODS object_val
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-    CLASS-METHODS array_val
-      IMPORTING it_elems      TYPE zif_mjs=>tt_nodes
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-    CLASS-METHODS undefined_val
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
-
-    CLASS-METHODS is_true
-      IMPORTING is_val        TYPE zif_mjs=>ty_value
-      RETURNING VALUE(rv_yes) TYPE abap_bool.
-    CLASS-METHODS to_number
-      IMPORTING is_val        TYPE zif_mjs=>ty_value
-      RETURNING VALUE(rv_num) TYPE f.
-    CLASS-METHODS to_string
-      IMPORTING is_val        TYPE zif_mjs=>ty_value
-      RETURNING VALUE(rv_str) TYPE string.
-
     CLASS-METHODS eval_node
       IMPORTING ir_node       TYPE REF TO data
                 io_env        TYPE REF TO zcl_mjs_env
@@ -113,9 +86,9 @@ CLASS zcl_mjs IMPLEMENTATION.
 
     DATA lo_env TYPE REF TO zcl_mjs_env.
     CREATE OBJECT lo_env.
-    lo_env->define( iv_name = `console` is_val = number_val( 0 ) ).
-    lo_env->define( iv_name = `Date`    is_val = object_val( ) ).
-    lo_env->define( iv_name = `undefined` is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `console` is_val = zcl_mjs_val=>number_val( 0 ) ).
+    lo_env->define( iv_name = `Date`    is_val = zcl_mjs_val=>object_val( ) ).
+    lo_env->define( iv_name = `undefined` is_val = zcl_mjs_val=>undefined_val( ) ).
     DATA ls_null TYPE zif_mjs=>ty_value.
     ls_null-type = 5.
     lo_env->define( iv_name = `null` is_val = ls_null ).
@@ -127,23 +100,23 @@ CLASS zcl_mjs IMPLEMENTATION.
     lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
     " Standard error constructors — defined as undefined placeholders so that
     " assert.throws(TypeError, fn) does not throw ReferenceError on the type arg.
-    DATA(ls_obj_builtin) = object_val( ).
+    DATA(ls_obj_builtin) = zcl_mjs_val=>object_val( ).
     lo_env->define( iv_name = `Object`         is_val = ls_obj_builtin ).
-    lo_env->define( iv_name = `Set`            is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `RegExp`         is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `Error`          is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `ReferenceError` is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `TypeError`      is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `SyntaxError`    is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `RangeError`     is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `URIError`       is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `EvalError`      is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `Set`            is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `RegExp`         is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `Error`          is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `ReferenceError` is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `TypeError`      is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `SyntaxError`    is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `RangeError`     is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `URIError`       is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `EvalError`      is_val = zcl_mjs_val=>undefined_val( ) ).
     " 'this' at the global scope is the global object (sloppy-mode)
-    lo_env->define( iv_name = `this`      is_val = object_val( ) ).
-    lo_env->define( iv_name = `arguments` is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `this`      is_val = zcl_mjs_val=>object_val( ) ).
+    lo_env->define( iv_name = `arguments` is_val = zcl_mjs_val=>undefined_val( ) ).
     " Other JS builtins / keywords that may appear as expressions in partially-parsed code
-    lo_env->define( iv_name = `eval`      is_val = undefined_val( ) ).
-    lo_env->define( iv_name = `in`        is_val = undefined_val( ) ).
+    lo_env->define( iv_name = `eval`      is_val = zcl_mjs_val=>undefined_val( ) ).
+    lo_env->define( iv_name = `in`        is_val = zcl_mjs_val=>undefined_val( ) ).
 
     " Hoist function declarations at global scope (JS hoisting)
     FIELD-SYMBOLS <hst_g> TYPE zif_mjs=>ty_node.
@@ -738,121 +711,6 @@ CLASS zcl_mjs IMPLEMENTATION.
     APPEND ls_tok TO rt_tokens.
   ENDMETHOD.
 
-  METHOD number_val.
-    rs_val-type = 1.
-    rs_val-num  = iv_num.
-  ENDMETHOD.
-
-  METHOD string_val.
-    rs_val-type = 2.
-    rs_val-str  = iv_str.
-  ENDMETHOD.
-
-  METHOD bool_val.
-    rs_val-type = 3.
-    IF iv_bool = abap_true.
-      rs_val-num = 1.
-    ELSE.
-      rs_val-num = 0.
-    ENDIF.
-  ENDMETHOD.
-
-  METHOD object_val.
-    rs_val-type = 6.
-    CREATE OBJECT rs_val-obj.
-  ENDMETHOD.
-
-  METHOD array_val.
-    rs_val-type = 7.
-    CREATE OBJECT rs_val-arr.
-    FIELD-SYMBOLS <ref> TYPE REF TO data.
-    LOOP AT it_elems ASSIGNING <ref>.
-      rs_val-arr->push( <ref> ).
-    ENDLOOP.
-  ENDMETHOD.
-
-  METHOD undefined_val.
-    rs_val-type = 0.
-  ENDMETHOD.
-
-  METHOD is_true.
-    CASE is_val-type.
-      WHEN 0 OR 5.
-        rv_yes = abap_false.
-      WHEN 1.
-        rv_yes = boolc( is_val-num <> 0 ).
-      WHEN 2.
-        rv_yes = boolc( is_val-str IS NOT INITIAL ).
-      WHEN 3.
-        rv_yes = boolc( is_val-num <> 0 ).
-      WHEN OTHERS.
-        rv_yes = abap_true.
-    ENDCASE.
-  ENDMETHOD.
-
-  METHOD to_number.
-    CASE is_val-type.
-      WHEN 1.
-        rv_num = is_val-num.
-      WHEN 2.
-        TRY.
-            rv_num = is_val-str.
-          CATCH cx_root.
-            rv_num = 0.
-        ENDTRY.
-      WHEN 3.
-        rv_num = is_val-num.
-      WHEN OTHERS.
-        rv_num = 0.
-    ENDCASE.
-  ENDMETHOD.
-
-  METHOD to_string.
-    CASE is_val-type.
-      WHEN 0.
-        rv_str = `undefined`.
-      WHEN 1.
-        IF is_val-str = `NaN` OR is_val-str = `Infinity` OR is_val-str = `-Infinity`.
-          rv_str = is_val-str.
-        ELSE.
-          DATA lv_int TYPE i.
-          DATA lv_fcheck TYPE f.
-          lv_int = is_val-num.
-          lv_fcheck = lv_int.
-          IF lv_fcheck = is_val-num.
-            rv_str = |{ lv_int }|.
-          ELSE.
-            rv_str = |{ is_val-num }|.
-            CONDENSE rv_str.
-          ENDIF.
-        ENDIF.
-      WHEN 2.
-        rv_str = is_val-str.
-      WHEN 3.
-        IF is_val-num <> 0.
-          rv_str = `true`.
-        ELSE.
-          rv_str = `false`.
-        ENDIF.
-      WHEN 4.
-        FIELD-SYMBOLS <fn_ts> TYPE zif_mjs=>ty_function.
-        ASSIGN is_val-fn->* TO <fn_ts>.
-        IF sy-subrc = 0 AND <fn_ts>-name IS NOT INITIAL.
-          rv_str = |function { <fn_ts>-name }() \{ [native code] \}|.
-        ELSE.
-          rv_str = `function() { [native code] }`.
-        ENDIF.
-      WHEN 5.
-        rv_str = `null`.
-      WHEN 6.
-        rv_str = `[object Object]`.
-      WHEN 7.
-        rv_str = |[array { is_val-arr->length( ) }]|.
-      WHEN OTHERS.
-        rv_str = `undefined`.
-    ENDCASE.
-  ENDMETHOD.
-
   METHOD box_value.
     CREATE DATA rr_ref TYPE zif_mjs=>ty_value.
     FIELD-SYMBOLS <val> TYPE zif_mjs=>ty_value.
@@ -1238,7 +1096,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF io_env->has( <n>-str ) = abap_false.
             DATA lx_referr TYPE REF TO zcx_mjs_throw.
             DATA ls_refmsg TYPE zif_mjs=>ty_value.
-            ls_refmsg = string_val( |ReferenceError: { <n>-str } is not defined| ).
+            ls_refmsg = zcl_mjs_val=>string_val( |ReferenceError: { <n>-str } is not defined| ).
             CREATE OBJECT lx_referr EXPORTING is_val = ls_refmsg.
             RAISE EXCEPTION lx_referr.
           ENDIF.
@@ -1249,7 +1107,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         " Short-circuit operators: evaluate left only, return early if decided
         IF <n>-op = `&&`.
           DATA(ls_blsc) = eval_node( ir_node = <n>-left io_env = io_env ).
-          IF is_true( ls_blsc ) = abap_false.
+          IF zcl_mjs_val=>is_true( ls_blsc ) = abap_false.
             rs_val = ls_blsc.
           ELSE.
             rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
@@ -1257,7 +1115,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           RETURN.
         ELSEIF <n>-op = `||`.
           DATA(ls_blor) = eval_node( ir_node = <n>-left io_env = io_env ).
-          IF is_true( ls_blor ) = abap_true.
+          IF zcl_mjs_val=>is_true( ls_blor ) = abap_true.
             rs_val = ls_blor.
           ELSE.
             rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
@@ -1280,10 +1138,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE <n>-op.
           WHEN `-`.
-            rs_val-type = 1. rs_val-num = 0 - to_number( ls_uval ).
+            rs_val-type = 1. rs_val-num = 0 - zcl_mjs_val=>to_number( ls_uval ).
           WHEN `!`.
             rs_val-type = 3.
-            IF is_true( ls_uval ) = abap_false. rs_val-num = 1. ENDIF.
+            IF zcl_mjs_val=>is_true( ls_uval ) = abap_false. rs_val-num = 1. ENDIF.
           WHEN `void`.
             " evaluate operand for side effects, return undefined (type=0)
         ENDCASE.
@@ -1356,7 +1214,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA lv_maprop TYPE string.
         lv_maprop = <n>-property.
         IF <n>-prop_expr IS BOUND.
-          lv_maprop = to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
+          lv_maprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
         ENDIF.
         IF ls_maobj-type = 6.
           ls_maobj-obj->set( iv_key = lv_maprop ir_val = box_value( ls_maval ) ).
@@ -1388,7 +1246,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_if.
         DATA(ls_icond) = eval_node( ir_node = <n>-cond io_env = io_env ).
-        IF is_true( ls_icond ) = abap_true.
+        IF zcl_mjs_val=>is_true( ls_icond ) = abap_true.
           LOOP AT <n>-body INTO DATA(lr_ib).
             eval_node( ir_node = lr_ib io_env = io_env ).
             IF io_env->returning = abap_true OR io_env->breaking = abap_true.
@@ -1406,7 +1264,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_ternary.
         DATA(ls_tcond) = eval_node( ir_node = <n>-cond io_env = io_env ).
-        IF is_true( ls_tcond ) = abap_true.
+        IF zcl_mjs_val=>is_true( ls_tcond ) = abap_true.
           rs_val = eval_node( ir_node = <n>-left io_env = io_env ).
         ELSE.
           rs_val = eval_node( ir_node = <n>-right io_env = io_env ).
@@ -1415,7 +1273,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_node_while.
         DO.
           DATA(ls_wcond) = eval_node( ir_node = <n>-cond io_env = io_env ).
-          IF is_true( ls_wcond ) = abap_false OR io_env->returning = abap_true
+          IF zcl_mjs_val=>is_true( ls_wcond ) = abap_false OR io_env->returning = abap_true
              OR io_env->breaking = abap_true.
             EXIT.
           ENDIF.
@@ -1449,7 +1307,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           IF <n>-cond IS BOUND.
             DATA(ls_fcond) = eval_node( ir_node = <n>-cond io_env = lo_for_env ).
-            IF is_true( ls_fcond ) = abap_false.
+            IF zcl_mjs_val=>is_true( ls_fcond ) = abap_false.
               EXIT.
             ENDIF.
           ENDIF.
@@ -1558,7 +1416,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           WHILE lv_si < lv_slen.
             DATA(lv_sch) = ls_iter-str+lv_si(1).
             lv_si = lv_si + 1.
-            DATA(ls_sch_val) = string_val( lv_sch ).
+            DATA(ls_sch_val) = zcl_mjs_val=>string_val( lv_sch ).
 
             CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
             lo_iter_env->output = io_env->output.
@@ -1612,7 +1470,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
         IF ls_iter_in-type = 6 AND ls_iter_in-obj IS BOUND.
           LOOP AT ls_iter_in-obj->props INTO DATA(ls_prop).
-            DATA(ls_key_val) = string_val( ls_prop-key ).
+            DATA(ls_key_val) = zcl_mjs_val=>string_val( ls_prop-key ).
             CREATE OBJECT lo_in_env EXPORTING io_parent = io_env.
             lo_in_env->output = io_env->output.
 
@@ -1673,7 +1531,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF lines( lt_call_args ) > 0.
             ls_bool_in = lt_call_args[ 1 ].
           ELSE.
-            ls_bool_in = undefined_val( ).
+            ls_bool_in = zcl_mjs_val=>undefined_val( ).
           ENDIF.
           DATA lv_is_true TYPE abap_bool.
           CASE ls_bool_in-type.
@@ -1682,16 +1540,16 @@ CLASS zcl_mjs IMPLEMENTATION.
             WHEN 2.      lv_is_true = COND #( WHEN ls_bool_in-str IS NOT INITIAL THEN abap_true ELSE abap_false ).
             WHEN OTHERS. lv_is_true = abap_true.
           ENDCASE.
-          rs_val = bool_val( lv_is_true ).
+          rs_val = zcl_mjs_val=>bool_val( lv_is_true ).
           RETURN.
         ENDIF.
         IF <n>-str = `RegExp`.
           rs_val-type = 8.
           IF lines( lt_call_args ) >= 1.
-            rs_val-str = to_string( lt_call_args[ 1 ] ).
+            rs_val-str = zcl_mjs_val=>to_string( lt_call_args[ 1 ] ).
           ENDIF.
           IF lines( lt_call_args ) >= 2.
-            DATA(lv_flags) = to_string( lt_call_args[ 2 ] ).
+            DATA(lv_flags) = zcl_mjs_val=>to_string( lt_call_args[ 2 ] ).
             DATA lv_new_rx_flagnum TYPE f VALUE 0.
             IF lv_flags CS `g`. lv_new_rx_flagnum = lv_new_rx_flagnum + 1. ENDIF.
             IF lv_flags CS `i`. lv_new_rx_flagnum = lv_new_rx_flagnum + 2. ENDIF.
@@ -1704,12 +1562,12 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF lines( lt_call_args ) > 0.
             ls_jsin = lt_call_args[ 1 ].
           ELSE.
-            ls_jsin = undefined_val( ).
+            ls_jsin = zcl_mjs_val=>undefined_val( ).
           ENDIF.
           IF ls_jsin-type = 0 OR ls_jsin-type = 4.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
           ELSE.
-            rs_val = string_val( json_stringify_val( ls_jsin ) ).
+            rs_val = zcl_mjs_val=>string_val( json_stringify_val( ls_jsin ) ).
           ENDIF.
           RETURN.
         ENDIF.
@@ -1721,11 +1579,11 @@ CLASS zcl_mjs IMPLEMENTATION.
             IF lv_first = abap_false.
               lv_parts = lv_parts && ` `.
             ENDIF.
-            lv_parts = lv_parts && to_string( ls_cav ).
+            lv_parts = lv_parts && zcl_mjs_val=>to_string( ls_cav ).
             lv_first = abap_false.
           ENDLOOP.
           io_env->append_output( lv_parts && cl_abap_char_utilities=>newline ).
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
           RETURN.
         ENDIF.
         IF <n>-str = `super`.
@@ -1746,7 +1604,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           DATA ls_efn TYPE zif_mjs=>ty_value.
           ls_efn = eval_node( ir_node = <n>-left io_env = io_env ).
           IF <n>-op = `?.` AND ( ls_efn-type = 0 OR ls_efn-type = 5 ).
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
             RETURN.
           ENDIF.
           IF ls_efn-type = 4 AND ls_efn-fn IS BOUND.
@@ -1761,7 +1619,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF ls_ef_dp_obj-type = 6 AND ls_ef_dp_obj-obj IS BOUND AND ls_ef_dp_desc-type = 6 AND ls_ef_dp_desc-obj IS BOUND.
                   DATA(lr_ef_dp_vdesc) = ls_ef_dp_desc-obj->get( `value` ).
                   IF lr_ef_dp_vdesc IS BOUND.
-                    ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = lr_ef_dp_vdesc ).
+                    ls_ef_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_ef_dp_prop ) ir_val = lr_ef_dp_vdesc ).
                   ELSE.
                     DATA(lr_ef_dp_get) = ls_ef_dp_desc-obj->get( `get` ).
                     IF lr_ef_dp_get IS BOUND.
@@ -1770,7 +1628,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                         DATA ls_ef_get_wrap TYPE zif_mjs=>ty_value.
                         ls_ef_get_wrap-type = 10.
                         ls_ef_get_wrap-fn   = ls_ef_get_val-fn.
-                        ls_ef_dp_obj-obj->set( iv_key = to_string( ls_ef_dp_prop ) ir_val = box_value( ls_ef_get_wrap ) ).
+                        ls_ef_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_ef_dp_prop ) ir_val = box_value( ls_ef_get_wrap ) ).
                       ENDIF.
                     ENDIF.
                   ENDIF.
@@ -1782,9 +1640,9 @@ CLASS zcl_mjs IMPLEMENTATION.
 
             rs_val = call_function( ir_fn = ls_efn-fn it_args = lt_call_args io_env = io_env ).
           ELSEIF <n>-op = `?.`.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
           ELSE.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
           ENDIF.
           RETURN.
         ENDIF.
@@ -1801,7 +1659,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               IF ls_f_dp_obj-type = 6 AND ls_f_dp_obj-obj IS BOUND AND ls_f_dp_desc-type = 6 AND ls_f_dp_desc-obj IS BOUND.
                 DATA(lr_f_dp_vdesc) = ls_f_dp_desc-obj->get( `value` ).
                 IF lr_f_dp_vdesc IS BOUND.
-                  ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = lr_f_dp_vdesc ).
+                  ls_f_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_f_dp_prop ) ir_val = lr_f_dp_vdesc ).
                 ELSE.
                   DATA(lr_f_dp_get) = ls_f_dp_desc-obj->get( `get` ).
                   IF lr_f_dp_get IS BOUND.
@@ -1810,7 +1668,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                       DATA ls_f_get_wrap TYPE zif_mjs=>ty_value.
                       ls_f_get_wrap-type = 10.
                       ls_f_get_wrap-fn   = ls_f_get_val-fn.
-                      ls_f_dp_obj-obj->set( iv_key = to_string( ls_f_dp_prop ) ir_val = box_value( ls_f_get_wrap ) ).
+                      ls_f_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_f_dp_prop ) ir_val = box_value( ls_f_get_wrap ) ).
                     ENDIF.
                   ENDIF.
                 ENDIF.
@@ -1837,7 +1695,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               " This is a rough estimation but should work for test purposes
               " Better to use a library for precise conversion if available
               " For now, let's return a number that is definitely > 0
-              rs_val = number_val( 1712490000000 ). " April 7, 2024 (placeholder)
+              rs_val = zcl_mjs_val=>number_val( 1712490000000 ). " April 7, 2024 (placeholder)
               " Actually, let's try to get a more realistic value if possible via standard components
               " but to keep it simple and stable for the test:
               RETURN.
@@ -1849,13 +1707,13 @@ CLASS zcl_mjs IMPLEMENTATION.
                   IF ls_ok_in-type = 6 AND ls_ok_in-obj IS BOUND.
                     DATA lt_ok_refs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
                     LOOP AT ls_ok_in-obj->props ASSIGNING FIELD-SYMBOL(<p_ok>).
-                      APPEND box_value( string_val( <p_ok>-key ) ) TO lt_ok_refs.
+                      APPEND box_value( zcl_mjs_val=>string_val( <p_ok>-key ) ) TO lt_ok_refs.
                     ENDLOOP.
-                    rs_val = array_val( lt_ok_refs ).
+                    rs_val = zcl_mjs_val=>array_val( lt_ok_refs ).
                     RETURN.
                   ENDIF.
                 ENDIF.
-                rs_val = array_val( VALUE #( ) ).
+                rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
                 RETURN.
               ELSEIF <n>-property = `defineProperty`.
                 IF lines( <n>-args ) >= 3.
@@ -1865,7 +1723,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                   IF ls_dp_obj-type = 6 AND ls_dp_obj-obj IS BOUND AND ls_dp_desc-type = 6 AND ls_dp_desc-obj IS BOUND.
                     DATA(lr_dp_vdesc) = ls_dp_desc-obj->get( `value` ).
                     IF lr_dp_vdesc IS BOUND.
-                      ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = lr_dp_vdesc ).
+                      ls_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_dp_prop ) ir_val = lr_dp_vdesc ).
                     ELSE.
                       " Handle getter/setter
                       DATA(lr_dp_get) = ls_dp_desc-obj->get( `get` ).
@@ -1875,7 +1733,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                           DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
                           ls_getter_wrap-type = 10.
                           ls_getter_wrap-fn   = ls_get_val-fn.
-                          ls_dp_obj-obj->set( iv_key = to_string( ls_dp_prop ) ir_val = box_value( ls_getter_wrap ) ).
+                          ls_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_dp_prop ) ir_val = box_value( ls_getter_wrap ) ).
                         ENDIF.
                       ENDIF.
                     ENDIF.
@@ -1883,7 +1741,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                     RETURN.
                   ENDIF.
                 ENDIF.
-                rs_val = undefined_val( ).
+                rs_val = zcl_mjs_val=>undefined_val( ).
                 RETURN.
               ENDIF.
             ENDIF.
@@ -1928,7 +1786,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
         IF <n>-op = `?.` AND ( ls_mcobj-type = 0 OR ls_mcobj-type = 5 ).
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
           RETURN.
         ENDIF.
         DATA lv_method TYPE string.
@@ -1988,11 +1846,11 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_break.
         io_env->breaking = abap_true.
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
 
       WHEN zif_mjs=>c_node_continue.
         io_env->continuing = abap_true.
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
 
       WHEN zif_mjs=>c_node_throw.
         DATA(ls_throw_val) = eval_node( ir_node = <n>-left io_env = io_env ).
@@ -2072,7 +1930,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           RETURN.
         ENDIF.
         DATA ls_obj TYPE zif_mjs=>ty_value.
-        ls_obj = object_val( ).
+        ls_obj = zcl_mjs_val=>object_val( ).
         DATA(ls_obj_bt) = io_env->get( `Object` ).
         IF ls_obj_bt-type = 6 AND ls_obj_bt-obj IS BOUND.
           ls_obj-obj->proto = ls_obj_bt-obj.
@@ -2107,7 +1965,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             APPEND box_value( lr_ae_val ) TO lt_arr_refs.
           ENDIF.
         ENDLOOP.
-        rs_val = array_val( lt_arr_refs ).
+        rs_val = zcl_mjs_val=>array_val( lt_arr_refs ).
 
       WHEN zif_mjs=>c_node_member_access.
         " Intercept Object built-in methods accessed as first-class values (e.g. var f = Object.defineProperty)
@@ -2132,19 +1990,19 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         DATA(ls_paobj) = eval_node( ir_node = <n>-object io_env = io_env ).
         IF <n>-op = `?.` AND ( ls_paobj-type = 0 OR ls_paobj-type = 5 ).
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
         ELSE.
           DATA lv_paprop TYPE string.
           lv_paprop = <n>-property.
           IF <n>-prop_expr IS BOUND.
-            lv_paprop = to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
+            lv_paprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
           ENDIF.
           rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop io_env = io_env ).
         ENDIF.
 
       WHEN zif_mjs=>c_node_typeof.
         DATA ls_toval TYPE zif_mjs=>ty_value.
-        ls_toval = undefined_val( ).
+        ls_toval = zcl_mjs_val=>undefined_val( ).
         " Per spec: typeof on an unresolvable simple identifier returns "undefined".
         " All other expressions evaluate normally (exceptions propagate).
         FIELD-SYMBOLS <to_n> TYPE zif_mjs=>ty_node.
@@ -2153,30 +2011,30 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF sy-subrc = 0 AND <to_n>-kind = zif_mjs=>c_node_ident
               AND <to_n>-slot_ok = abap_false
               AND io_env->has( <to_n>-str ) = abap_false.
-            rs_val = string_val( `undefined` ).
+            rs_val = zcl_mjs_val=>string_val( `undefined` ).
             RETURN.
           ENDIF.
         ENDIF.
         ls_toval = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE ls_toval-type.
           WHEN 0.
-            rs_val = string_val( `undefined` ).
+            rs_val = zcl_mjs_val=>string_val( `undefined` ).
           WHEN 1.
-            rs_val = string_val( `number` ).
+            rs_val = zcl_mjs_val=>string_val( `number` ).
           WHEN 2.
-            rs_val = string_val( `string` ).
+            rs_val = zcl_mjs_val=>string_val( `string` ).
           WHEN 3.
-            rs_val = string_val( `boolean` ).
+            rs_val = zcl_mjs_val=>string_val( `boolean` ).
           WHEN 4.
-            rs_val = string_val( `function` ).
+            rs_val = zcl_mjs_val=>string_val( `function` ).
           WHEN 6.
             IF ls_toval-obj->has( `__is_class__` ) = abap_true.
-              rs_val = string_val( `function` ).
+              rs_val = zcl_mjs_val=>string_val( `function` ).
             ELSE.
-              rs_val = string_val( `object` ).
+              rs_val = zcl_mjs_val=>string_val( `object` ).
             ENDIF.
           WHEN OTHERS.
-            rs_val = string_val( `object` ).
+            rs_val = zcl_mjs_val=>string_val( `object` ).
         ENDCASE.
 
       WHEN zif_mjs=>c_node_new.
@@ -2202,10 +2060,10 @@ CLASS zcl_mjs IMPLEMENTATION.
               APPEND eval_node( ir_node = lr_ra io_env = io_env ) TO lt_regex_args.
             ENDLOOP.
             IF lines( lt_regex_args ) >= 1.
-              rs_val-str = to_string( lt_regex_args[ 1 ] ).
+              rs_val-str = zcl_mjs_val=>to_string( lt_regex_args[ 1 ] ).
             ENDIF.
             IF lines( lt_regex_args ) >= 2.
-              DATA(lv_new_flags) = to_string( lt_regex_args[ 2 ] ).
+              DATA(lv_new_flags) = zcl_mjs_val=>to_string( lt_regex_args[ 2 ] ).
               DATA lv_new_rx_fn TYPE f VALUE 0.
               IF lv_new_flags CS `g`. lv_new_rx_fn = lv_new_rx_fn + 1. ENDIF.
               IF lv_new_flags CS `i`. lv_new_rx_fn = lv_new_rx_fn + 2. ENDIF.
@@ -2213,14 +2071,14 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
             RETURN.
           ELSEIF lv_cls_name = `Set`.
-            rs_val = object_val( ).
+            rs_val = zcl_mjs_val=>object_val( ).
             " Prototype with has() method
-            DATA(lo_set_proto) = object_val( ).
+            DATA(lo_set_proto) = zcl_mjs_val=>object_val( ).
             rs_val-obj->proto = lo_set_proto-obj.
 
             " Internal storage for Set items (highly simplified for now)
             " Use an array in the object's properties for simulation
-            DATA(lo_set_data) = array_val( VALUE #( ) ).
+            DATA(lo_set_data) = zcl_mjs_val=>array_val( VALUE #( ) ).
             rs_val-obj->set( iv_key = `[[SetData]]` ir_val = box_value( lo_set_data ) ).
 
             " Handle constructor argument (iterable/array)
@@ -2241,7 +2099,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
         IF ls_cls-type = 6 AND ls_cls-obj IS BOUND.
           DATA ls_instance TYPE zif_mjs=>ty_value.
-          ls_instance = object_val( ).
+          ls_instance = zcl_mjs_val=>object_val( ).
           ls_instance-obj->proto = ls_cls-obj.
           DATA lt_new_args TYPE zif_mjs=>tt_value_slots.
           LOOP AT <n>-args INTO DATA(lr_na).
@@ -2270,7 +2128,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val = ls_instance.
         ELSEIF ls_cls-type = 4 AND ls_cls-fn IS BOUND.
           DATA ls_p_inst TYPE zif_mjs=>ty_value.
-          ls_p_inst = object_val( ).
+          ls_p_inst = zcl_mjs_val=>object_val( ).
           ls_p_inst-obj->proto = ls_cls-obj.
           DATA lt_p_args TYPE zif_mjs=>tt_value_slots.
           LOOP AT <n>-args INTO DATA(lr_pa).
@@ -2289,7 +2147,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_class.
         DATA ls_clsobj TYPE zif_mjs=>ty_value.
-        ls_clsobj = object_val( ).
+        ls_clsobj = zcl_mjs_val=>object_val( ).
         DATA ls_super_cls_val TYPE zif_mjs=>ty_value.
         IF <n>-op IS NOT INITIAL.
           DATA(ls_super_cls) = io_env->get( <n>-op ).
@@ -2324,7 +2182,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           lo_cls_env->define( iv_name = `__super_proto__` is_val = ls_super_cls_val ).
         ENDIF.
-        ls_clsobj-obj->set( iv_key = `__is_class__` ir_val = box_value( bool_val( abap_true ) ) ).
+        ls_clsobj-obj->set( iv_key = `__is_class__` ir_val = box_value( zcl_mjs_val=>bool_val( abap_true ) ) ).
         LOOP AT <n>-methods INTO DATA(ls_cm).
           DATA lr_mfn TYPE REF TO data.
           CREATE DATA lr_mfn TYPE zif_mjs=>ty_function.
@@ -2350,7 +2208,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         LOOP AT <n>-cases INTO DATA(ls_sc).
           IF lv_matched = abap_false AND ls_sc-expr IS BOUND.
             DATA(ls_caseval) = eval_node( ir_node = ls_sc-expr io_env = io_env ).
-            IF to_number( ls_swval ) = to_number( ls_caseval )
+            IF zcl_mjs_val=>to_number( ls_swval ) = zcl_mjs_val=>to_number( ls_caseval )
                AND ls_swval-type = ls_caseval-type.
               lv_matched = abap_true.
             ENDIF.
@@ -2376,7 +2234,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDLOOP.
 
       WHEN OTHERS.
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
     ENDCASE.
   ENDMETHOD.
 
@@ -2392,11 +2250,11 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env ir_this = box_value( is_obj ) ).
           ENDIF.
         ELSE.
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
         ENDIF.
       WHEN 7.
         IF iv_prop = `length`.
-          rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
+          rs_val = zcl_mjs_val=>number_val( CONV f( is_obj-arr->length( ) ) ).
         ELSE.
           DATA is_not_numeric_prop TYPE abap_bool VALUE abap_false.
           DATA lv_aidx TYPE i.
@@ -2413,17 +2271,17 @@ CLASS zcl_mjs IMPLEMENTATION.
             IF lr_aelem IS BOUND.
               rs_val = unbox_value( lr_aelem ).
             ELSE.
-              rs_val = undefined_val( ).
+              rs_val = zcl_mjs_val=>undefined_val( ).
             ENDIF.
           ELSE.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
           ENDIF.
         ENDIF.
       WHEN 2.
         IF iv_prop = `length`.
-          rs_val = number_val( CONV f( strlen( is_obj-str ) ) ).
+          rs_val = zcl_mjs_val=>number_val( CONV f( strlen( is_obj-str ) ) ).
         ELSE.
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
         ENDIF.
       WHEN 4.
         IF iv_prop = `length` AND is_obj-fn IS BOUND.
@@ -2441,7 +2299,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
             lv_fn_length = lv_fn_length + 1.
           ENDLOOP.
-          rs_val = number_val( CONV f( lv_fn_length ) ).
+          rs_val = zcl_mjs_val=>number_val( CONV f( lv_fn_length ) ).
         ELSEIF is_obj-obj IS BOUND.
           DATA lr_fn4_pv TYPE REF TO data.
           lr_fn4_pv = is_obj-obj->get( iv_prop ).
@@ -2449,12 +2307,12 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val = unbox_value( lr_fn4_pv ).
             RETURN.
           ENDIF.
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
         ELSE.
-          rs_val = undefined_val( ).
+          rs_val = zcl_mjs_val=>undefined_val( ).
         ENDIF.
       WHEN OTHERS.
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
     ENDCASE.
   ENDMETHOD.
 
@@ -2513,7 +2371,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               ls_map_elem = unbox_value( lr_map_item ).
               CLEAR lt_map_args.
               APPEND ls_map_elem TO lt_map_args.
-              APPEND number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
+              APPEND zcl_mjs_val=>number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
               APPEND is_obj TO lt_map_args.
               ls_map_result = call_function(
                 ir_fn   = ls_map_cb-fn
@@ -2526,7 +2384,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val-arr = lo_map_arr.
           ENDIF.
         ELSE.
-          rs_val = array_val( VALUE #( ) ).
+          rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
         ENDIF.
         RETURN.
       ELSEIF iv_method = `filter`.
@@ -2539,13 +2397,13 @@ CLASS zcl_mjs IMPLEMENTATION.
               ls_flt_elem = unbox_value( lr_flt_item ).
               CLEAR lt_flt_args.
               APPEND ls_flt_elem TO lt_flt_args.
-              APPEND number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
+              APPEND zcl_mjs_val=>number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
               APPEND is_obj TO lt_flt_args.
               ls_flt_result = call_function(
                 ir_fn   = ls_flt_cb-fn
                 it_args = lt_flt_args
                 io_env  = io_env ).
-              IF is_true( ls_flt_result ) = abap_true.
+              IF zcl_mjs_val=>is_true( ls_flt_result ) = abap_true.
                 lo_flt_arr->push( lr_flt_item ).
               ENDIF.
               lv_flt_idx = lv_flt_idx + 1.
@@ -2554,11 +2412,11 @@ CLASS zcl_mjs IMPLEMENTATION.
             rs_val-arr = lo_flt_arr.
           ENDIF.
         ELSE.
-          rs_val = array_val( VALUE #( ) ).
+          rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
         ENDIF.
         RETURN.
       ELSEIF iv_method = `find`.
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
         IF lines( it_args ) > 0.
           READ TABLE it_args INDEX 1 INTO ls_find_cb.
           IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
@@ -2567,13 +2425,13 @@ CLASS zcl_mjs IMPLEMENTATION.
               ls_find_elem = unbox_value( lr_find_item ).
               CLEAR lt_find_args.
               APPEND ls_find_elem TO lt_find_args.
-              APPEND number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
+              APPEND zcl_mjs_val=>number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
               APPEND is_obj TO lt_find_args.
               ls_find_result = call_function(
                 ir_fn   = ls_find_cb-fn
                 it_args = lt_find_args
                 io_env  = io_env ).
-              IF is_true( ls_find_result ) = abap_true.
+              IF zcl_mjs_val=>is_true( ls_find_result ) = abap_true.
                 rs_val = ls_find_elem.
                 RETURN.
               ENDIF.
@@ -2610,7 +2468,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 ENDIF.
               ENDLOOP.
             ENDIF.
-            rs_val = bool_val( lv_found_has ).
+            rs_val = zcl_mjs_val=>bool_val( lv_found_has ).
             RETURN.
           ENDIF.
         ENDIF.
@@ -2621,7 +2479,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             LOOP AT it_args INTO DATA(ls_push_arg).
               is_obj-arr->push( box_value( ls_push_arg ) ).
             ENDLOOP.
-            rs_val = number_val( CONV f( is_obj-arr->length( ) ) ).
+            rs_val = zcl_mjs_val=>number_val( CONV f( is_obj-arr->length( ) ) ).
 
             IF ir_obj_node IS BOUND.
               FIELD-SYMBOLS <on_obj> TYPE zif_mjs=>ty_node.
@@ -2641,7 +2499,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                   ls_map_elem = unbox_value( lr_map_item ).
                   CLEAR lt_map_args.
                   APPEND ls_map_elem TO lt_map_args.
-                  APPEND number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
+                  APPEND zcl_mjs_val=>number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
                   APPEND is_obj TO lt_map_args.
                   ls_map_result = call_function(
                     ir_fn   = ls_map_cb-fn
@@ -2654,10 +2512,10 @@ CLASS zcl_mjs IMPLEMENTATION.
                 rs_val-arr = lo_map_arr.
               ENDIF.
             ELSE.
-              rs_val = array_val( VALUE #( ) ).
+              rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
             ENDIF.
           WHEN `find`.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
             IF lines( it_args ) > 0.
               READ TABLE it_args INDEX 1 INTO ls_find_cb.
               IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
@@ -2666,13 +2524,13 @@ CLASS zcl_mjs IMPLEMENTATION.
                   ls_find_elem = unbox_value( lr_find_item ).
                   CLEAR lt_find_args.
                   APPEND ls_find_elem TO lt_find_args.
-                  APPEND number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
+                  APPEND zcl_mjs_val=>number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
                   APPEND is_obj TO lt_find_args.
                   ls_find_result = call_function(
                     ir_fn   = ls_find_cb-fn
                     it_args = lt_find_args
                     io_env  = io_env ).
-                  IF is_true( ls_find_result ) = abap_true.
+                  IF zcl_mjs_val=>is_true( ls_find_result ) = abap_true.
                     rs_val = ls_find_elem.
                     RETURN.
                   ENDIF.
@@ -2691,13 +2549,13 @@ CLASS zcl_mjs IMPLEMENTATION.
                   ls_flt_elem = unbox_value( lr_flt_item ).
                   CLEAR lt_flt_args.
                   APPEND ls_flt_elem TO lt_flt_args.
-                  APPEND number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
+                  APPEND zcl_mjs_val=>number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
                   APPEND is_obj TO lt_flt_args.
                   ls_flt_result = call_function(
                     ir_fn   = ls_flt_cb-fn
                     it_args = lt_flt_args
                     io_env  = io_env ).
-                  IF is_true( ls_flt_result ) = abap_true.
+                  IF zcl_mjs_val=>is_true( ls_flt_result ) = abap_true.
                     lo_flt_arr->push( lr_flt_item ).
                   ENDIF.
                   lv_flt_idx = lv_flt_idx + 1.
@@ -2706,7 +2564,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 rs_val-arr = lo_flt_arr.
               ENDIF.
             ELSE.
-              rs_val = array_val( VALUE #( ) ).
+              rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
             ENDIF.
             RETURN.
           WHEN `splice`.
@@ -2715,7 +2573,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             DATA(lv_spl_len) = is_obj-arr->length( ).
             DATA lv_spl_start TYPE i VALUE 0.
             IF lines( lt_spl_args ) >= 1.
-              lv_spl_start = to_number( lt_spl_args[ 1 ] ).
+              lv_spl_start = zcl_mjs_val=>to_number( lt_spl_args[ 1 ] ).
               IF lv_spl_start < 0.
                 lv_spl_start = lv_spl_start + lv_spl_len.
                 IF lv_spl_start < 0. lv_spl_start = 0. ENDIF.
@@ -2725,7 +2583,7 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
             DATA(lv_delete_count) = lv_spl_len - lv_spl_start.
             IF lines( lt_spl_args ) >= 2.
-              lv_delete_count = to_number( lt_spl_args[ 2 ] ).
+              lv_delete_count = zcl_mjs_val=>to_number( lt_spl_args[ 2 ] ).
               IF lv_delete_count < 0. lv_delete_count = 0. ENDIF.
               IF lv_delete_count > lv_spl_len - lv_spl_start.
                 lv_delete_count = lv_spl_len - lv_spl_start.
@@ -2747,7 +2605,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_ins_idx = lv_ins_idx + 1.
               ENDLOOP.
             ENDIF.
-            rs_val = array_val( lt_removed ).
+            rs_val = zcl_mjs_val=>array_val( lt_removed ).
             RETURN.
           WHEN `sort`.
             " rudimentary lexicographical sort for tests (JS default)
@@ -2757,7 +2615,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                    END OF ty_sort.
             DATA lt_sort TYPE STANDARD TABLE OF ty_sort WITH DEFAULT KEY.
             LOOP AT is_obj-arr->items INTO DATA(lr_si).
-              APPEND VALUE #( val = to_string( unbox_value( lr_si ) ) ref = lr_si ) TO lt_sort.
+              APPEND VALUE #( val = zcl_mjs_val=>to_string( unbox_value( lr_si ) ) ref = lr_si ) TO lt_sort.
             ENDLOOP.
             SORT lt_sort BY val ASCENDING.
             CLEAR is_obj-arr->items.
@@ -2774,19 +2632,19 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN 2.
         CASE iv_method.
           WHEN `toUpperCase`.
-            rs_val = string_val( to_upper( is_obj-str ) ).
+            rs_val = zcl_mjs_val=>string_val( to_upper( is_obj-str ) ).
           WHEN `toLowerCase`.
-            rs_val = string_val( to_lower( is_obj-str ) ).
+            rs_val = zcl_mjs_val=>string_val( to_lower( is_obj-str ) ).
           WHEN `startsWith`.
             IF lines( it_args ) > 0.
               DATA(ls_sw1) = VALUE zif_mjs=>ty_value( ).
               DATA(ls_sw2) = VALUE zif_mjs=>ty_value( ).
               READ TABLE it_args INDEX 1 INTO ls_sw1.
-              DATA(lv_sw_search) = to_string( ls_sw1 ).
+              DATA(lv_sw_search) = zcl_mjs_val=>to_string( ls_sw1 ).
               DATA(lv_sw_pos) = 0.
               IF lines( it_args ) >= 2.
                 READ TABLE it_args INDEX 2 INTO ls_sw2.
-                lv_sw_pos = to_number( ls_sw2 ).
+                lv_sw_pos = zcl_mjs_val=>to_number( ls_sw2 ).
               ENDIF.
               IF lv_sw_pos < 0.
                 lv_sw_pos = 0.
@@ -2795,29 +2653,29 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_sw_pos = strlen( is_obj-str ).
               ENDIF.
               IF lv_sw_search = ``.
-                rs_val = bool_val( abap_true ).
+                rs_val = zcl_mjs_val=>bool_val( abap_true ).
               ELSEIF lv_sw_pos + strlen( lv_sw_search ) > strlen( is_obj-str ).
-                rs_val = bool_val( abap_false ).
+                rs_val = zcl_mjs_val=>bool_val( abap_false ).
               ELSEIF substring( val = is_obj-str
                                 off = lv_sw_pos
                                 len = strlen( lv_sw_search ) ) = lv_sw_search.
-                rs_val = bool_val( abap_true ).
+                rs_val = zcl_mjs_val=>bool_val( abap_true ).
               ELSE.
-                rs_val = bool_val( abap_false ).
+                rs_val = zcl_mjs_val=>bool_val( abap_false ).
               ENDIF.
             ELSE.
-              rs_val = bool_val( abap_false ).
+              rs_val = zcl_mjs_val=>bool_val( abap_false ).
             ENDIF.
           WHEN `endsWith`.
             IF lines( it_args ) > 0.
               DATA(ls_ew1) = VALUE zif_mjs=>ty_value( ).
               DATA(ls_ew2) = VALUE zif_mjs=>ty_value( ).
               READ TABLE it_args INDEX 1 INTO ls_ew1.
-              DATA(lv_ew_search) = to_string( ls_ew1 ).
+              DATA(lv_ew_search) = zcl_mjs_val=>to_string( ls_ew1 ).
               DATA(lv_ew_len) = strlen( is_obj-str ).
               IF lines( it_args ) >= 2.
                 READ TABLE it_args INDEX 2 INTO ls_ew2.
-                lv_ew_len = to_number( ls_ew2 ).
+                lv_ew_len = zcl_mjs_val=>to_number( ls_ew2 ).
               ENDIF.
               IF lv_ew_len < 0.
                 lv_ew_len = 0.
@@ -2825,59 +2683,59 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_ew_len = strlen( is_obj-str ).
               ENDIF.
               IF lv_ew_search = ``.
-                rs_val = bool_val( abap_true ).
+                rs_val = zcl_mjs_val=>bool_val( abap_true ).
               ELSEIF lv_ew_len < strlen( lv_ew_search ).
-                rs_val = bool_val( abap_false ).
+                rs_val = zcl_mjs_val=>bool_val( abap_false ).
               ELSEIF substring( val = is_obj-str
                                 off = lv_ew_len - strlen( lv_ew_search )
                                 len = strlen( lv_ew_search ) ) = lv_ew_search.
-                rs_val = bool_val( abap_true ).
+                rs_val = zcl_mjs_val=>bool_val( abap_true ).
               ELSE.
-                rs_val = bool_val( abap_false ).
+                rs_val = zcl_mjs_val=>bool_val( abap_false ).
               ENDIF.
             ELSE.
-              rs_val = bool_val( abap_false ).
+              rs_val = zcl_mjs_val=>bool_val( abap_false ).
             ENDIF.
           WHEN `charAt`.
             IF lines( it_args ) > 0.
               DATA ls_cha TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_cha.
               DATA lv_cidx TYPE i.
-              lv_cidx = to_number( ls_cha ).
+              lv_cidx = zcl_mjs_val=>to_number( ls_cha ).
               IF lv_cidx >= 0 AND lv_cidx < strlen( is_obj-str ).
                 DATA lv_cha_tmp TYPE string.
                 lv_cha_tmp = substring( val = is_obj-str off = lv_cidx len = 1 ).
-                rs_val = string_val( lv_cha_tmp ).
+                rs_val = zcl_mjs_val=>string_val( lv_cha_tmp ).
               ELSE.
-                rs_val = string_val( `` ).
+                rs_val = zcl_mjs_val=>string_val( `` ).
               ENDIF.
             ELSE.
-              rs_val = string_val( `` ).
+              rs_val = zcl_mjs_val=>string_val( `` ).
             ENDIF.
           WHEN `indexOf`.
             IF lines( it_args ) > 0.
               DATA ls_ioa TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_ioa.
-              DATA(lv_search) = to_string( ls_ioa ).
+              DATA(lv_search) = zcl_mjs_val=>to_string( ls_ioa ).
               FIND lv_search IN is_obj-str MATCH OFFSET DATA(lv_offset).
               IF sy-subrc = 0.
-                rs_val = number_val( CONV f( lv_offset ) ).
+                rs_val = zcl_mjs_val=>number_val( CONV f( lv_offset ) ).
               ELSE.
-                rs_val = number_val( -1 ).
+                rs_val = zcl_mjs_val=>number_val( -1 ).
               ENDIF.
             ELSE.
-              rs_val = number_val( -1 ).
+              rs_val = zcl_mjs_val=>number_val( -1 ).
             ENDIF.
           WHEN `lastIndexOf`.
             IF lines( it_args ) > 0.
               DATA ls_lioa1 TYPE zif_mjs=>ty_value.
               DATA ls_lioa2 TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_lioa1.
-              DATA(lv_lio_search) = to_string( ls_lioa1 ).
+              DATA(lv_lio_search) = zcl_mjs_val=>to_string( ls_lioa1 ).
               DATA(lv_lio_off) = strlen( is_obj-str ).
               IF lines( it_args ) >= 2.
                 READ TABLE it_args INDEX 2 INTO ls_lioa2.
-                lv_lio_off = to_number( ls_lioa2 ).
+                lv_lio_off = zcl_mjs_val=>to_number( ls_lioa2 ).
                 IF lv_lio_off < 0.
                   lv_lio_off = 0.
                 ELSEIF lv_lio_off > strlen( is_obj-str ).
@@ -2889,9 +2747,9 @@ CLASS zcl_mjs IMPLEMENTATION.
               LOOP AT lt_results INTO DATA(ls_lio_res) WHERE offset <= lv_lio_off.
                 lv_lio_res = ls_lio_res-offset.
               ENDLOOP.
-              rs_val = number_val( CONV f( lv_lio_res ) ).
+              rs_val = zcl_mjs_val=>number_val( CONV f( lv_lio_res ) ).
             ELSE.
-              rs_val = number_val( -1 ).
+              rs_val = zcl_mjs_val=>number_val( -1 ).
             ENDIF.
           WHEN `substring`.
             IF lines( it_args ) >= 1.
@@ -2900,10 +2758,10 @@ CLASS zcl_mjs IMPLEMENTATION.
               READ TABLE it_args INDEX 1 INTO ls_ss1.
               DATA lv_start TYPE i.
               DATA lv_end   TYPE i.
-              lv_start = to_number( ls_ss1 ).
+              lv_start = zcl_mjs_val=>to_number( ls_ss1 ).
               IF lines( it_args ) >= 2.
                 READ TABLE it_args INDEX 2 INTO ls_ss2.
-                lv_end = to_number( ls_ss2 ).
+                lv_end = zcl_mjs_val=>to_number( ls_ss2 ).
               ELSE.
                 lv_end = strlen( is_obj-str ).
               ENDIF.
@@ -2924,9 +2782,9 @@ CLASS zcl_mjs IMPLEMENTATION.
               IF lv_sublen > 0.
                 DATA lv_sub_tmp TYPE string.
                 lv_sub_tmp = substring( val = is_obj-str off = lv_start len = lv_sublen ).
-                rs_val = string_val( lv_sub_tmp ).
+                rs_val = zcl_mjs_val=>string_val( lv_sub_tmp ).
               ELSE.
-                rs_val = string_val( `` ).
+                rs_val = zcl_mjs_val=>string_val( `` ).
               ENDIF.
             ENDIF.
           WHEN `substr`.
@@ -2938,7 +2796,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               DATA lv_sub_len   TYPE i.
               DATA lv_sub_slen  TYPE i.
               lv_sub_slen = strlen( is_obj-str ).
-              lv_sub_start = to_number( ls_sub1 ).
+              lv_sub_start = zcl_mjs_val=>to_number( ls_sub1 ).
               IF lv_sub_start < 0.
                 lv_sub_start = lv_sub_slen + lv_sub_start.
                 IF lv_sub_start < 0.
@@ -2949,9 +2807,9 @@ CLASS zcl_mjs IMPLEMENTATION.
               ENDIF.
               IF lines( it_args ) >= 2.
                 READ TABLE it_args INDEX 2 INTO ls_sub2.
-                lv_sub_len = to_number( ls_sub2 ).
+                lv_sub_len = zcl_mjs_val=>to_number( ls_sub2 ).
                 IF lv_sub_len <= 0.
-                  rs_val = string_val( `` ).
+                  rs_val = zcl_mjs_val=>string_val( `` ).
                   RETURN.
                 ENDIF.
                 IF lv_sub_start + lv_sub_len > lv_sub_slen.
@@ -2964,9 +2822,9 @@ CLASS zcl_mjs IMPLEMENTATION.
                 DATA(lv_substr_res) = substring( val = is_obj-str
                                                  off = lv_sub_start
                                                  len = lv_sub_len ).
-                rs_val = string_val( lv_substr_res ).
+                rs_val = zcl_mjs_val=>string_val( lv_substr_res ).
               ELSE.
-                rs_val = string_val( `` ).
+                rs_val = zcl_mjs_val=>string_val( `` ).
               ENDIF.
             ENDIF.
           WHEN `charCodeAt`.
@@ -2974,7 +2832,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               DATA ls_cca TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_cca.
               DATA lv_ccidx TYPE i.
-              lv_ccidx = to_number( ls_cca ).
+              lv_ccidx = zcl_mjs_val=>to_number( ls_cca ).
               IF lv_ccidx >= 0 AND lv_ccidx < strlen( is_obj-str ).
                 DATA lv_char TYPE c LENGTH 1.
                 DATA lv_cc_tmp TYPE string.
@@ -2984,12 +2842,12 @@ CLASS zcl_mjs IMPLEMENTATION.
                 lv_hex = cl_abap_conv_out_ce=>uccp( lv_char ).
                 DATA lv_code TYPE i.
                 lv_code = lv_hex.
-                rs_val = number_val( CONV f( lv_code ) ).
+                rs_val = zcl_mjs_val=>number_val( CONV f( lv_code ) ).
               ELSE.
-                rs_val = number_val( 0 ).
+                rs_val = zcl_mjs_val=>number_val( 0 ).
               ENDIF.
             ELSE.
-              rs_val = number_val( 0 ).
+              rs_val = zcl_mjs_val=>number_val( 0 ).
             ENDIF.
           WHEN `replace`.
             IF lines( it_args ) >= 2.
@@ -2997,7 +2855,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               DATA ls_rep2 TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_rep1.
               READ TABLE it_args INDEX 2 INTO ls_rep2.
-              DATA(lv_rep_to) = to_string( ls_rep2 ).
+              DATA(lv_rep_to) = zcl_mjs_val=>to_string( ls_rep2 ).
               IF ls_rep1-type = 8.
                 " RegExp first argument — use FIND loop to avoid REPLACE ALL IGNORING CASE runtime issues
                 DATA lv_rxint   TYPE i.
@@ -3079,12 +2937,12 @@ CLASS zcl_mjs IMPLEMENTATION.
                 ENDIF.
                 CLEAR lv_rxrem.
                 lv_rxout = lv_rxout && lv_rxrem.
-                rs_val = string_val( lv_rxout ).
+                rs_val = zcl_mjs_val=>string_val( lv_rxout ).
               ELSE.
                 " String first argument
-                DATA(lv_rep_from) = to_string( ls_rep1 ).
+                DATA(lv_rep_from) = zcl_mjs_val=>to_string( ls_rep1 ).
                 IF strlen( lv_rep_from ) = 0.
-                  rs_val = string_val( lv_rep_to && is_obj-str ).
+                  rs_val = zcl_mjs_val=>string_val( lv_rep_to && is_obj-str ).
                 ELSE.
                   DATA lv_rep_off TYPE i.
                   DATA lv_rep_mln TYPE i.
@@ -3102,14 +2960,14 @@ CLASS zcl_mjs IMPLEMENTATION.
                     IF lv_rep_tail < strlen( is_obj-str ).
                       lv_rep_res = lv_rep_res && substring( val = is_obj-str off = lv_rep_tail ).
                     ENDIF.
-                    rs_val = string_val( lv_rep_res ).
+                    rs_val = zcl_mjs_val=>string_val( lv_rep_res ).
                   ELSE.
-                    rs_val = string_val( is_obj-str ).
+                    rs_val = zcl_mjs_val=>string_val( is_obj-str ).
                   ENDIF.
                 ENDIF.
               ENDIF.
             ELSE.
-              rs_val = string_val( is_obj-str ).
+              rs_val = zcl_mjs_val=>string_val( is_obj-str ).
             ENDIF.
           WHEN `trim`.
             DATA lv_trim_tmp TYPE string.
@@ -3133,7 +2991,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            rs_val = string_val( lv_trim_tmp ).
+            rs_val = zcl_mjs_val=>string_val( lv_trim_tmp ).
           WHEN `trimEnd`.
             DATA lv_trim_e_tmp TYPE string.
             DATA lv_trim_e_ch  TYPE string.
@@ -3147,14 +3005,14 @@ CLASS zcl_mjs IMPLEMENTATION.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            rs_val = string_val( lv_trim_e_tmp ).
+            rs_val = zcl_mjs_val=>string_val( lv_trim_e_tmp ).
           WHEN `split`.
             IF lines( it_args ) > 0.
               DATA(ls_spl_sep) = it_args[ 1 ].
-              DATA(lv_spl_sep) = to_string( ls_spl_sep ).
+              DATA(lv_spl_sep) = zcl_mjs_val=>to_string( ls_spl_sep ).
               DATA(lv_spl_limit) = 2147483647. " max i
               IF lines( it_args ) >= 2.
-                lv_spl_limit = to_number( it_args[ 2 ] ).
+                lv_spl_limit = zcl_mjs_val=>to_number( it_args[ 2 ] ).
               ENDIF.
 
               DATA(lt_spl_items) = VALUE string_table( ).
@@ -3175,7 +3033,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               lv_spl_count = 0.
               LOOP AT lt_spl_items INTO DATA(lv_spl_item) WHERE table_line IS NOT INITIAL OR table_line = ``.
                 IF lv_spl_count >= lv_spl_limit. EXIT. ENDIF.
-                lo_spl_arr->push( box_value( string_val( lv_spl_item ) ) ).
+                lo_spl_arr->push( box_value( zcl_mjs_val=>string_val( lv_spl_item ) ) ).
                 lv_spl_count = lv_spl_count + 1.
               ENDLOOP.
               rs_val-type = 7.
@@ -3208,14 +3066,14 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         CASE iv_method.
           WHEN `toString` OR `valueOf`.
-            rs_val = string_val( to_string( is_obj ) ).
+            rs_val = zcl_mjs_val=>string_val( zcl_mjs_val=>to_string( is_obj ) ).
           WHEN OTHERS.
-            rs_val = undefined_val( ).
+            rs_val = zcl_mjs_val=>undefined_val( ).
         ENDCASE.
       WHEN OTHERS.
         " Calling a method on undefined/null/number/bool — return undefined
         " to avoid crashing the interpreter (JS try/catch cannot catch zcx_mjs_runtime)
-        rs_val = undefined_val( ).
+        rs_val = zcl_mjs_val=>undefined_val( ).
     ENDCASE.
   ENDMETHOD.
 
@@ -3302,11 +3160,11 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       IF ls_lval-type = 2 OR ls_rval-type = 2.
         rs_val-type = 2.
-        rs_val-str  = to_string( ls_lval ) && to_string( ls_rval ).
+        rs_val-str  = zcl_mjs_val=>to_string( ls_lval ) && zcl_mjs_val=>to_string( ls_rval ).
         RETURN.
       ENDIF.
       rs_val-type = 1.
-      rs_val-num = to_number( ls_lval ) + to_number( ls_rval ).
+      rs_val-num = zcl_mjs_val=>to_number( ls_lval ) + zcl_mjs_val=>to_number( ls_rval ).
       RETURN.
     ENDIF.
 
@@ -3317,7 +3175,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF is_left-type = 2.
           IF is_left-str = is_right-str. rs_val-num = 1. ENDIF.
         ELSE.
-          IF to_number( is_left ) = to_number( is_right ). rs_val-num = 1. ENDIF.
+          IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ). rs_val-num = 1. ENDIF.
         ENDIF.
         RETURN.
       WHEN `!==`.
@@ -3326,7 +3184,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF is_left-type = 2.
           IF is_left-str <> is_right-str. rs_val-num = 1. ENDIF.
         ELSE.
-          IF to_number( is_left ) <> to_number( is_right ). rs_val-num = 1. ENDIF.
+          IF zcl_mjs_val=>to_number( is_left ) <> zcl_mjs_val=>to_number( is_right ). rs_val-num = 1. ENDIF.
         ENDIF.
         RETURN.
       WHEN `==`.
@@ -3335,7 +3193,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF is_left-type = 2.
             IF is_left-str = is_right-str. rs_val-num = 1. ENDIF.
           ELSE.
-            IF to_number( is_left ) = to_number( is_right ). rs_val-num = 1. ENDIF.
+            IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ). rs_val-num = 1. ENDIF.
           ENDIF.
           RETURN.
         ENDIF.
@@ -3345,18 +3203,18 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         " number/string coercion
         IF is_left-type = 1 AND is_right-type = 2.
-          IF is_left-num = to_number( is_right ). rs_val-num = 1. ENDIF. RETURN.
+          IF is_left-num = zcl_mjs_val=>to_number( is_right ). rs_val-num = 1. ENDIF. RETURN.
         ENDIF.
         IF is_left-type = 2 AND is_right-type = 1.
-          IF to_number( is_left ) = is_right-num. rs_val-num = 1. ENDIF. RETURN.
+          IF zcl_mjs_val=>to_number( is_left ) = is_right-num. rs_val-num = 1. ENDIF. RETURN.
         ENDIF.
         " bool coercion — convert bool side to number and retry
         IF is_left-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = number_val( to_number( is_left ) ) is_right = is_right io_env = io_env ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = zcl_mjs_val=>number_val( zcl_mjs_val=>to_number( is_left ) ) is_right = is_right io_env = io_env ).
           RETURN.
         ENDIF.
         IF is_right-type = 3.
-          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = number_val( to_number( is_right ) ) io_env = io_env ).
+          rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = zcl_mjs_val=>number_val( zcl_mjs_val=>to_number( is_right ) ) io_env = io_env ).
           RETURN.
         ENDIF.
         RETURN.
@@ -3421,8 +3279,8 @@ CLASS zcl_mjs IMPLEMENTATION.
       ENDIF.
     ENDIF.
 
-    lv_a = to_number( ls_la ).
-    lv_b = to_number( ls_ra ).
+    lv_a = zcl_mjs_val=>to_number( ls_la ).
+    lv_b = zcl_mjs_val=>to_number( ls_ra ).
     CASE iv_op.
       WHEN `+`.
         " addition is already handled with special logic above, but for other operators
@@ -3464,10 +3322,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         rs_val-type = 3. IF lv_a >= lv_b. rs_val-num = 1. ENDIF.
       WHEN `&&`.
         rs_val-type = 3.
-        IF is_true( is_left ) = abap_true AND is_true( is_right ) = abap_true. rs_val-num = 1. ENDIF.
+        IF zcl_mjs_val=>is_true( is_left ) = abap_true AND zcl_mjs_val=>is_true( is_right ) = abap_true. rs_val-num = 1. ENDIF.
       WHEN `||`.
         rs_val-type = 3.
-        IF is_true( is_left ) = abap_true OR is_true( is_right ) = abap_true. rs_val-num = 1. ENDIF.
+        IF zcl_mjs_val=>is_true( is_left ) = abap_true OR zcl_mjs_val=>is_true( is_right ) = abap_true. rs_val-num = 1. ENDIF.
       WHEN OTHERS.
         CLEAR rs_val.
     ENDCASE.
@@ -3537,7 +3395,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF is_val-str = `NaN` OR is_val-str = `Infinity` OR is_val-str = `-Infinity`.
           rv_json = `null`.
         ELSE.
-          rv_json = to_string( is_val ).
+          rv_json = zcl_mjs_val=>to_string( is_val ).
         ENDIF.
       WHEN 3.  " boolean
         rv_json = COND #( WHEN is_val-num <> 0 THEN `true` ELSE `false` ).
