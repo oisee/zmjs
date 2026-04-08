@@ -586,6 +586,14 @@ CLASS zcl_mjs IMPLEMENTATION.
           CONTINUE.
         ENDIF.
       ENDIF.
+        IF lv_ch = `.` AND lv_i + 2 < lv_len AND iv_src+lv_i(3) = `...`.
+          CLEAR ls_tok.
+          ls_tok-kind = 3.
+          ls_tok-val  = `...`.
+          APPEND ls_tok TO rt_tokens.
+          lv_i = lv_i + 3.
+          CONTINUE.
+        ENDIF.
 
       " Dot-prefixed number: .5, .0e1
       IF lv_ch = `.` AND lv_i + 1 < lv_len.
@@ -1518,17 +1526,17 @@ CLASS zcl_mjs IMPLEMENTATION.
           IF lr_iter_data_ref IS BOUND.
             DATA(ls_iter_data_val) = unbox_value( lr_iter_data_ref ).
             IF ls_iter_data_val-type = 7 AND ls_iter_data_val-arr IS BOUND.
-              LOOP AT ls_iter_data_val-arr->items INTO lr_item.
-                ls_item_val = unbox_value( lr_item ).
+              LOOP AT ls_iter_data_val-arr->items INTO DATA(lr_mi_item).
+                DATA(ls_mi_item_val) = unbox_value( lr_mi_item ).
                 CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
                 lo_iter_env->output = io_env->output.
                 IF lv_of_decl = abap_true.
-                  lo_iter_env->set( iv_name = lv_of_name is_val = ls_item_val ).
+                  lo_iter_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
                 ELSE.
-                  io_env->set( iv_name = lv_of_name is_val = ls_item_val ).
+                  io_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
                 ENDIF.
-                LOOP AT <n>-body INTO lr_ofb.
-                  eval_node( ir_node = lr_ofb io_env = lo_iter_env ).
+                LOOP AT <n>-body INTO DATA(lr_mi_ofb).
+                  eval_node( ir_node = lr_mi_ofb io_env = lo_iter_env ).
                   IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
                     EXIT.
                   ENDIF.
@@ -2409,16 +2417,6 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
           ELSE.
             rs_val = undefined_val( ).
-            IF iv_prop = `map` OR iv_prop = `filter` OR iv_prop = `find`.
-              DATA lr_arr_mafn TYPE REF TO data.
-              CREATE DATA lr_arr_mafn TYPE zif_mjs=>ty_function.
-              FIELD-SYMBOLS <arr_mafn> TYPE zif_mjs=>ty_function.
-              ASSIGN lr_arr_mafn->* TO <arr_mafn>.
-              <arr_mafn>-name = iv_prop.
-              <arr_mafn>-compiled = abap_true.
-              rs_val-type = 4.
-              rs_val-fn   = lr_arr_mafn.
-            ENDIF.
           ENDIF.
         ENDIF.
       WHEN 2.
