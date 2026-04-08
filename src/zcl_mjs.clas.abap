@@ -3014,27 +3014,29 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF lv_rxint = 2 OR lv_rxint = 3. lv_rxicase = abap_true. ENDIF.
                 CLEAR lv_rxout.
                 lv_rxrem = is_obj-str.
-                DO.
-                  IF lv_rxicase = abap_true.
-                    FIND FIRST OCCURRENCE OF REGEX ls_rep1-str IN lv_rxrem
-                      MATCH OFFSET lv_rxoff MATCH LENGTH lv_rxmln IGNORING CASE.
-                  ELSE.
-                    FIND FIRST OCCURRENCE OF REGEX ls_rep1-str IN lv_rxrem
-                      MATCH OFFSET lv_rxoff MATCH LENGTH lv_rxmln.
-                  ENDIF.
-                  IF sy-subrc <> 0. EXIT. ENDIF.
-                  IF lv_rxoff > 0.
-                    lv_rxout = lv_rxout && substring( val = lv_rxrem len = lv_rxoff ).
+                IF lv_rxicase = abap_true.
+                  FIND ALL OCCURRENCES OF REGEX ls_rep1-str IN lv_rxrem
+                    RESULTS DATA(lt_rx_res) IGNORING CASE.
+                ELSE.
+                  FIND ALL OCCURRENCES OF REGEX ls_rep1-str IN lv_rxrem
+                    RESULTS lt_rx_res.
+                ENDIF.
+                IF lv_rxglob = abap_false AND lines( lt_rx_res ) > 1.
+                  DELETE lt_rx_res FROM 2.
+                ENDIF.
+                DATA lv_rx_pos TYPE i.
+                lv_rx_pos = 0.
+                LOOP AT lt_rx_res ASSIGNING FIELD-SYMBOL(<ls_rx_r>).
+                  IF <ls_rx_r>-offset > lv_rx_pos.
+                    lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos len = <ls_rx_r>-offset - lv_rx_pos ).
                   ENDIF.
                   lv_rxout = lv_rxout && lv_rep_to.
-                  lv_rxnxt = lv_rxoff + lv_rxmln.
-                  IF lv_rxnxt >= strlen( lv_rxrem ).
-                    CLEAR lv_rxrem.
-                    EXIT.
-                  ENDIF.
-                  lv_rxrem = substring( val = lv_rxrem off = lv_rxnxt ).
-                  IF lv_rxglob = abap_false. EXIT. ENDIF.
-                ENDDO.
+                  lv_rx_pos = <ls_rx_r>-offset + <ls_rx_r>-length.
+                ENDLOOP.
+                IF lv_rx_pos < strlen( lv_rxrem ).
+                  lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos ).
+                ENDIF.
+                CLEAR lv_rxrem.
                 lv_rxout = lv_rxout && lv_rxrem.
                 rs_val = string_val( lv_rxout ).
               ELSE.
