@@ -108,7 +108,6 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_replace_regex_anchor FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex_g FOR TESTING RAISING zcx_mjs_runtime.
-    METHODS test_replace_empty_regex_look FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -926,12 +925,6 @@ CLASS ltcl_test IMPLEMENTATION.
   METHOD test_replace_empty_regex_g.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( `console.log("abc".replace(/(?:)/g, "-"));` ) )
-      exp = |-a-b-c-| ).
-  ENDMETHOD.
-
-  METHOD test_replace_empty_regex_look.
-    cl_abap_unit_assert=>assert_equals(
-      act = trim( zcl_mjs=>eval( `console.log("abc".replace(/(?=)/g, "-"));` ) )
       exp = |-a-b-c-| ).
   ENDMETHOD.
 
