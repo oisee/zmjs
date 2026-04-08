@@ -106,6 +106,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_array_map FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_rest_map FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_regex_anchor FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_replace_empty_regex FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_replace_empty_regex_g FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -907,6 +909,23 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( `console.log("abc".replace(/^/g, "x"));` ) )
       exp = |xabc| ).
+  ENDMETHOD.
+
+  METHOD test_replace_empty_regex.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `var str = "abc";` && lv_nl &&
+      `var res = str.replace(new RegExp(""), "-");` && lv_nl &&
+      `console.log(res);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |-abc| ).
+  ENDMETHOD.
+
+  METHOD test_replace_empty_regex_g.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( `console.log("abc".replace(/(?:)/g, "-"));` ) )
+      exp = |-a-b-c-| ).
   ENDMETHOD.
 
   METHOD test262.

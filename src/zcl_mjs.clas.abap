@@ -3014,27 +3014,68 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF lv_rxint = 2 OR lv_rxint = 3. lv_rxicase = abap_true. ENDIF.
                 CLEAR lv_rxout.
                 lv_rxrem = is_obj-str.
-                IF lv_rxicase = abap_true.
-                  FIND ALL OCCURRENCES OF REGEX ls_rep1-str IN lv_rxrem
-                    RESULTS DATA(lt_rx_res) IGNORING CASE.
+                DATA lv_rx_pos TYPE i VALUE 0.
+                DATA lt_rx_res TYPE match_result_tab.
+                IF strlen( ls_rep1-str ) = 0.
+                  " Empty regex matches empty string between everywhere
+                  DO.
+                    IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
+                    DATA ls_e_res TYPE match_result.
+                    ls_e_res-offset = lv_rx_pos.
+                    ls_e_res-length = 0.
+                    APPEND ls_e_res TO lt_rx_res.
+                    lv_rx_pos = lv_rx_pos + 1.
+                    IF lv_rxglob = abap_false OR lv_rx_pos > strlen( lv_rxrem ).
+                      EXIT.
+                    ENDIF.
+                  ENDDO.
                 ELSE.
-                  FIND ALL OCCURRENCES OF REGEX ls_rep1-str IN lv_rxrem
-                    RESULTS lt_rx_res.
+                  DO.
+                    IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
+                    DATA ls_rx_res TYPE match_result.
+                    IF lv_rxicase = abap_true.
+                      FIND REGEX ls_rep1-str IN SECTION OFFSET lv_rx_pos OF lv_rxrem
+                        MATCH OFFSET ls_rx_res-offset
+                        MATCH LENGTH ls_rx_res-length
+                        IGNORING CASE.
+                    ELSE.
+                      FIND REGEX ls_rep1-str IN SECTION OFFSET lv_rx_pos OF lv_rxrem
+                        MATCH OFFSET ls_rx_res-offset
+                        MATCH LENGTH ls_rx_res-length.
+                    ENDIF.
+                    IF sy-subrc <> 0.
+                      EXIT.
+                    ENDIF.
+                    IF lv_rx_pos > 0 AND ls_rx_res-offset = lv_rx_pos AND ls_rx_res-length = 0 AND substring( val = ls_rep1-str len = 1 ) = '^'.
+                      lv_rx_pos = lv_rx_pos + 1.
+                      CONTINUE.
+                    ENDIF.
+                    APPEND ls_rx_res TO lt_rx_res.
+                    IF lv_rxglob = abap_false.
+                      EXIT.
+                    ENDIF.
+                    IF ls_rx_res-length = 0.
+                      lv_rx_pos = ls_rx_res-offset + 1.
+                      " Hack for open-abap: ^ matches start of section, which means we might get infinite exact zero-length hits if we keep searching from lv_rx_pos. But wait! We just incremented lv_rx_pos!
+                    ELSE.
+                      lv_rx_pos = ls_rx_res-offset + ls_rx_res-length.
+                    ENDIF.
+                    IF lv_rx_pos > strlen( lv_rxrem ).
+                      EXIT.
+                    ENDIF.
+                  ENDDO.
                 ENDIF.
-                IF lv_rxglob = abap_false AND lines( lt_rx_res ) > 1.
-                  DELETE lt_rx_res FROM 2.
-                ENDIF.
-                DATA lv_rx_pos TYPE i.
-                lv_rx_pos = 0.
+                DATA lv_rx_pos2 TYPE i.
+                lv_rx_pos2 = 0.
                 LOOP AT lt_rx_res ASSIGNING FIELD-SYMBOL(<ls_rx_r>).
-                  IF <ls_rx_r>-offset > lv_rx_pos.
-                    lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos len = <ls_rx_r>-offset - lv_rx_pos ).
+                  IF <ls_rx_r>-offset > lv_rx_pos2.
+                    lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos2 len = <ls_rx_r>-offset - lv_rx_pos2 ).
                   ENDIF.
                   lv_rxout = lv_rxout && lv_rep_to.
-                  lv_rx_pos = <ls_rx_r>-offset + <ls_rx_r>-length.
+                  lv_rx_pos2 = <ls_rx_r>-offset + <ls_rx_r>-length.
                 ENDLOOP.
-                IF lv_rx_pos < strlen( lv_rxrem ).
-                  lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos ).
+                IF lv_rx_pos2 < strlen( lv_rxrem ).
+                  lv_rxout = lv_rxout && substring( val = lv_rxrem off = lv_rx_pos2 ).
                 ENDIF.
                 CLEAR lv_rxrem.
                 lv_rxout = lv_rxout && lv_rxrem.
