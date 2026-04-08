@@ -3019,7 +3019,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                 IF strlen( ls_rep1-str ) = 0.
                   " Empty regex matches empty string between everywhere
                   DO.
-                    IF sy-index > 100000. EXIT. ENDIF. " Safety timeout
+                    IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
                     DATA ls_e_res TYPE match_result.
                     ls_e_res-offset = lv_rx_pos.
                     ls_e_res-length = 0.
@@ -3031,7 +3031,7 @@ CLASS zcl_mjs IMPLEMENTATION.
                   ENDDO.
                 ELSE.
                   DO.
-                    IF sy-index > 100000. EXIT. ENDIF. " Safety timeout
+                    IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
                     DATA ls_rx_res TYPE match_result.
                     IF lv_rxicase = abap_true.
                       FIND REGEX ls_rep1-str IN SECTION OFFSET lv_rx_pos OF lv_rxrem
