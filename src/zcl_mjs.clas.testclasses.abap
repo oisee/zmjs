@@ -103,6 +103,8 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_class_typeof FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_array_filter FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_date_now FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_array_map FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_rest_map FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -874,6 +876,30 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |true| ).
+  ENDMETHOD.
+
+  METHOD test_array_map.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `const arr = [1, 2, 3];` && lv_nl &&
+      `const mapped = arr.map(x => x * 2);` && lv_nl &&
+      `console.log(mapped[0] + " " + mapped.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 3| ).
+  ENDMETHOD.
+
+  METHOD test_rest_map.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function double(...rest) {` && lv_nl &&
+      `  return rest.map(x => x * 2);` && lv_nl &&
+      `}` && lv_nl &&
+      `const res = double(1, 2, 3);` && lv_nl &&
+      `console.log(res[0] + " " + res.length);`.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 3| ).
   ENDMETHOD.
 
   METHOD test262.

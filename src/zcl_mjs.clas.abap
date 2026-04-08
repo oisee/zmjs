@@ -586,6 +586,14 @@ CLASS zcl_mjs IMPLEMENTATION.
           CONTINUE.
         ENDIF.
       ENDIF.
+        IF lv_ch = `.` AND lv_i + 2 < lv_len AND iv_src+lv_i(3) = `...`.
+          CLEAR ls_tok.
+          ls_tok-kind = 3.
+          ls_tok-val  = `...`.
+          APPEND ls_tok TO rt_tokens.
+          lv_i = lv_i + 3.
+          CONTINUE.
+        ENDIF.
 
       " Dot-prefixed number: .5, .0e1
       IF lv_ch = `.` AND lv_i + 1 < lv_len.
@@ -1512,6 +1520,38 @@ CLASS zcl_mjs IMPLEMENTATION.
             ENDIF.
           ENDLOOP.
 
+        ELSEIF ls_iter-type = 6 AND ls_iter-obj IS BOUND AND ls_iter-obj->has( `[[SetData]]` ).
+          " Mock for Map/Set iteration
+          DATA(lr_iter_data_ref) = ls_iter-obj->get( `[[SetData]]` ).
+          IF lr_iter_data_ref IS BOUND.
+            DATA(ls_iter_data_val) = unbox_value( lr_iter_data_ref ).
+            IF ls_iter_data_val-type = 7 AND ls_iter_data_val-arr IS BOUND.
+              LOOP AT ls_iter_data_val-arr->items INTO DATA(lr_mi_item).
+                DATA(ls_mi_item_val) = unbox_value( lr_mi_item ).
+                CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
+                lo_iter_env->output = io_env->output.
+                IF lv_of_decl = abap_true.
+                  lo_iter_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
+                ELSE.
+                  io_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
+                ENDIF.
+                LOOP AT <n>-body INTO DATA(lr_mi_ofb).
+                  eval_node( ir_node = lr_mi_ofb io_env = lo_iter_env ).
+                  IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
+                    EXIT.
+                  ENDIF.
+                ENDLOOP.
+                IF lo_iter_env->continuing = abap_true.
+                  lo_iter_env->continuing = abap_false.
+                ENDIF.
+                IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true.
+                  lv_iter_return = lo_iter_env->returning.
+                  EXIT.
+                ENDIF.
+              ENDLOOP.
+            ENDIF.
+          ENDIF.
+
         ELSEIF ls_iter-type = 2.
           DATA(lv_slen) = strlen( ls_iter-str ).
           DATA lv_si TYPE i VALUE 0.
@@ -2376,7 +2416,7 @@ CLASS zcl_mjs IMPLEMENTATION.
               rs_val = undefined_val( ).
             ENDIF.
           ELSE.
-             rs_val = undefined_val( ).
+            rs_val = undefined_val( ).
           ENDIF.
         ENDIF.
       WHEN 2.
@@ -2419,6 +2459,27 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_method_call.
+    DATA ls_map_cb      TYPE zif_mjs=>ty_value.
+    DATA lo_map_arr     TYPE REF TO zcl_mjs_arr.
+    DATA lv_map_idx     TYPE i.
+    DATA lr_map_item    TYPE REF TO data.
+    DATA ls_map_elem    TYPE zif_mjs=>ty_value.
+    DATA lt_map_args    TYPE zif_mjs=>tt_value_slots.
+    DATA ls_map_result  TYPE zif_mjs=>ty_value.
+    DATA ls_find_cb     TYPE zif_mjs=>ty_value.
+    DATA lv_find_idx    TYPE i.
+    DATA lr_find_item   TYPE REF TO data.
+    DATA ls_find_elem   TYPE zif_mjs=>ty_value.
+    DATA lt_find_args   TYPE zif_mjs=>tt_value_slots.
+    DATA ls_find_result TYPE zif_mjs=>ty_value.
+    DATA ls_flt_cb      TYPE zif_mjs=>ty_value.
+    DATA lo_flt_arr     TYPE REF TO zcl_mjs_arr.
+    DATA lv_flt_idx     TYPE i.
+    DATA lr_flt_item    TYPE REF TO data.
+    DATA ls_flt_elem    TYPE zif_mjs=>ty_value.
+    DATA lt_flt_args    TYPE zif_mjs=>tt_value_slots.
+    DATA ls_flt_result  TYPE zif_mjs=>ty_value.
+
     " check if method is defined on the object it was called on, or its prototype
     DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method io_env = io_env ).
 
@@ -2438,6 +2499,90 @@ CLASS zcl_mjs IMPLEMENTATION.
       " Also update the object reference in the caller's context if possible
       " But for built-ins, we mainly care about updating 'this' if the method was called on 'this'
       RETURN.
+    ENDIF.
+
+    " Handle built-in array methods (map, filter, find) when array is returned from function or otherwise not a direct variable
+    IF is_obj-type = 7.
+      IF iv_method = `map`.
+        IF lines( it_args ) > 0.
+          READ TABLE it_args INDEX 1 INTO ls_map_cb.
+          IF ls_map_cb-type = 4 AND ls_map_cb-fn IS BOUND.
+            CREATE OBJECT lo_map_arr.
+            lv_map_idx = 0.
+            LOOP AT is_obj-arr->items INTO lr_map_item.
+              ls_map_elem = unbox_value( lr_map_item ).
+              CLEAR lt_map_args.
+              APPEND ls_map_elem TO lt_map_args.
+              APPEND number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
+              APPEND is_obj TO lt_map_args.
+              ls_map_result = call_function(
+                ir_fn   = ls_map_cb-fn
+                it_args = lt_map_args
+                io_env  = io_env ).
+              lo_map_arr->push( box_value( ls_map_result ) ).
+              lv_map_idx = lv_map_idx + 1.
+            ENDLOOP.
+            rs_val-type = 7.
+            rs_val-arr = lo_map_arr.
+          ENDIF.
+        ELSE.
+          rs_val = array_val( VALUE #( ) ).
+        ENDIF.
+        RETURN.
+      ELSEIF iv_method = `filter`.
+        IF lines( it_args ) > 0.
+          READ TABLE it_args INDEX 1 INTO ls_flt_cb.
+          IF ls_flt_cb-type = 4 AND ls_flt_cb-fn IS BOUND.
+            CREATE OBJECT lo_flt_arr.
+            lv_flt_idx = 0.
+            LOOP AT is_obj-arr->items INTO lr_flt_item.
+              ls_flt_elem = unbox_value( lr_flt_item ).
+              CLEAR lt_flt_args.
+              APPEND ls_flt_elem TO lt_flt_args.
+              APPEND number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
+              APPEND is_obj TO lt_flt_args.
+              ls_flt_result = call_function(
+                ir_fn   = ls_flt_cb-fn
+                it_args = lt_flt_args
+                io_env  = io_env ).
+              IF is_true( ls_flt_result ) = abap_true.
+                lo_flt_arr->push( lr_flt_item ).
+              ENDIF.
+              lv_flt_idx = lv_flt_idx + 1.
+            ENDLOOP.
+            rs_val-type = 7.
+            rs_val-arr = lo_flt_arr.
+          ENDIF.
+        ELSE.
+          rs_val = array_val( VALUE #( ) ).
+        ENDIF.
+        RETURN.
+      ELSEIF iv_method = `find`.
+        rs_val = undefined_val( ).
+        IF lines( it_args ) > 0.
+          READ TABLE it_args INDEX 1 INTO ls_find_cb.
+          IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
+            lv_find_idx = 0.
+            LOOP AT is_obj-arr->items INTO lr_find_item.
+              ls_find_elem = unbox_value( lr_find_item ).
+              CLEAR lt_find_args.
+              APPEND ls_find_elem TO lt_find_args.
+              APPEND number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
+              APPEND is_obj TO lt_find_args.
+              ls_find_result = call_function(
+                ir_fn   = ls_find_cb-fn
+                it_args = lt_find_args
+                io_env  = io_env ).
+              IF is_true( ls_find_result ) = abap_true.
+                rs_val = ls_find_elem.
+                RETURN.
+              ENDIF.
+              lv_find_idx = lv_find_idx + 1.
+            ENDLOOP.
+          ENDIF.
+        ENDIF.
+        RETURN.
+      ENDIF.
     ENDIF.
 
     CASE is_obj-type.
@@ -2488,21 +2633,17 @@ CLASS zcl_mjs IMPLEMENTATION.
             RETURN.
           WHEN `map`.
             IF lines( it_args ) > 0.
-              DATA ls_map_cb TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_map_cb.
               IF ls_map_cb-type = 4 AND ls_map_cb-fn IS BOUND.
-                DATA lo_map_arr TYPE REF TO zcl_mjs_arr.
                 CREATE OBJECT lo_map_arr.
-                DATA lv_map_idx TYPE i VALUE 0.
-                LOOP AT is_obj-arr->items INTO DATA(lr_map_item).
-                  DATA ls_map_elem TYPE zif_mjs=>ty_value.
+                lv_map_idx = 0.
+                LOOP AT is_obj-arr->items INTO lr_map_item.
                   ls_map_elem = unbox_value( lr_map_item ).
-                  DATA lt_map_args TYPE zif_mjs=>tt_value_slots.
                   CLEAR lt_map_args.
                   APPEND ls_map_elem TO lt_map_args.
                   APPEND number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
                   APPEND is_obj TO lt_map_args.
-                  DATA(ls_map_result) = call_function(
+                  ls_map_result = call_function(
                     ir_fn   = ls_map_cb-fn
                     it_args = lt_map_args
                     io_env  = io_env ).
@@ -2518,19 +2659,16 @@ CLASS zcl_mjs IMPLEMENTATION.
           WHEN `find`.
             rs_val = undefined_val( ).
             IF lines( it_args ) > 0.
-              DATA ls_find_cb TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_find_cb.
               IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
-                DATA lv_find_idx TYPE i VALUE 0.
-                LOOP AT is_obj-arr->items INTO DATA(lr_find_item).
-                  DATA ls_find_elem TYPE zif_mjs=>ty_value.
+                lv_find_idx = 0.
+                LOOP AT is_obj-arr->items INTO lr_find_item.
                   ls_find_elem = unbox_value( lr_find_item ).
-                  DATA lt_find_args TYPE zif_mjs=>tt_value_slots.
                   CLEAR lt_find_args.
                   APPEND ls_find_elem TO lt_find_args.
                   APPEND number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
                   APPEND is_obj TO lt_find_args.
-                  DATA(ls_find_result) = call_function(
+                  ls_find_result = call_function(
                     ir_fn   = ls_find_cb-fn
                     it_args = lt_find_args
                     io_env  = io_env ).
@@ -2545,21 +2683,17 @@ CLASS zcl_mjs IMPLEMENTATION.
             RETURN.
           WHEN `filter`.
             IF lines( it_args ) > 0.
-              DATA ls_flt_cb TYPE zif_mjs=>ty_value.
               READ TABLE it_args INDEX 1 INTO ls_flt_cb.
               IF ls_flt_cb-type = 4 AND ls_flt_cb-fn IS BOUND.
-                DATA lo_flt_arr TYPE REF TO zcl_mjs_arr.
                 CREATE OBJECT lo_flt_arr.
-                DATA lv_flt_idx TYPE i VALUE 0.
-                LOOP AT is_obj-arr->items INTO DATA(lr_flt_item).
-                  DATA ls_flt_elem TYPE zif_mjs=>ty_value.
+                lv_flt_idx = 0.
+                LOOP AT is_obj-arr->items INTO lr_flt_item.
                   ls_flt_elem = unbox_value( lr_flt_item ).
-                  DATA lt_flt_args TYPE zif_mjs=>tt_value_slots.
                   CLEAR lt_flt_args.
                   APPEND ls_flt_elem TO lt_flt_args.
                   APPEND number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
                   APPEND is_obj TO lt_flt_args.
-                  DATA(ls_flt_result) = call_function(
+                  ls_flt_result = call_function(
                     ir_fn   = ls_flt_cb-fn
                     it_args = lt_flt_args
                     io_env  = io_env ).
