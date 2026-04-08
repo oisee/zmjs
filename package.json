@@ -18,7 +18,7 @@
   "homepage": "https://github.com/larshp/zmjs#readme",
   "dependencies": {
     "@abaplint/cli": "^2.118.10",
-    "@abaplint/runtime": "^2.13.9",
-    "@abaplint/transpiler-cli": "^2.13.9"
+    "@abaplint/runtime": "^2.13.10",
+    "@abaplint/transpiler-cli": "^2.13.10"
   }
 }

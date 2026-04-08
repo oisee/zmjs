@@ -105,6 +105,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_date_now FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_array_map FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_rest_map FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_replace_regex_anchor FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -900,6 +901,12 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |2 3| ).
+  ENDMETHOD.
+
+  METHOD test_replace_regex_anchor.
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( `console.log("abc".replace(/^/g, "x"));` ) )
+      exp = |xabc| ).
   ENDMETHOD.
 
   METHOD test262.
