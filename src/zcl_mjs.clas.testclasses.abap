@@ -742,11 +742,11 @@ CLASS ltcl_test IMPLEMENTATION.
       `  console.log("first: " + split.first.length + ", second: " + split.second.length);` && lv_nl &&
       `}`.
     TRY.
-      cl_abap_unit_assert=>assert_equals(
+        cl_abap_unit_assert=>assert_equals(
         act = trim( zcl_mjs=>eval( lv_js ) )
         exp = `first: 1, second: 1` ).
-    CATCH zcx_mjs_throw INTO DATA(lx).
-      cl_abap_unit_assert=>fail( lx->val-str ).
+      CATCH zcx_mjs_throw INTO DATA(lx).
+        cl_abap_unit_assert=>fail( lx->val-str ).
     ENDTRY.
   ENDMETHOD.
 

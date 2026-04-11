@@ -179,7 +179,9 @@ CLASS lcl_test IMPLEMENTATION.
       INTO TABLE @DATA(lt_all).
     DATA lv_list TYPE string.
     LOOP AT lt_all ASSIGNING FIELD-SYMBOL(<o>).
-      IF lv_list IS NOT INITIAL. lv_list = lv_list && `, `. ENDIF.
+      IF lv_list IS NOT INITIAL. 
+        lv_list = lv_list && `, `. 
+      ENDIF.
       lv_list = lv_list && <o>-obj_name.
     ENDLOOP.
     cl_abap_unit_assert=>assert_not_initial( act = lt_all msg = |$ZMJS empty| ).
