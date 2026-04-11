@@ -2634,6 +2634,54 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_bin_op.
+    " Fast path: both operands are plain numbers — skip all ToPrimitive coercion
+    IF is_left-type = 1 AND is_right-type = 1.
+      DATA lv_fp_a TYPE f.
+      DATA lv_fp_b TYPE f.
+      lv_fp_a = is_left-num.
+      lv_fp_b = is_right-num.
+      CASE iv_op.
+        WHEN `+`.
+          rs_val-type = 1. rs_val-num = lv_fp_a + lv_fp_b. RETURN.
+        WHEN `-`.
+          rs_val-type = 1. rs_val-num = lv_fp_a - lv_fp_b. RETURN.
+        WHEN `*`.
+          rs_val-type = 1. rs_val-num = lv_fp_a * lv_fp_b. RETURN.
+        WHEN `/`.
+          rs_val-type = 1.
+          IF lv_fp_b <> 0.
+            rs_val-num = lv_fp_a / lv_fp_b.
+          ELSEIF lv_fp_a = 0.
+            rs_val-str = `NaN`.
+          ELSEIF lv_fp_a > 0.
+            rs_val-str = `Infinity`.
+          ELSE.
+            rs_val-str = `-Infinity`.
+          ENDIF.
+          RETURN.
+        WHEN `%`.
+          rs_val-type = 1.
+          IF lv_fp_b <> 0.
+            DATA lv_fp_ia TYPE i.
+            DATA lv_fp_ib TYPE i.
+            lv_fp_ia = lv_fp_a.
+            lv_fp_ib = lv_fp_b.
+            rs_val-num = CONV f( lv_fp_ia MOD lv_fp_ib ).
+          ELSE.
+            rs_val-str = `NaN`.
+          ENDIF.
+          RETURN.
+        WHEN `<`.
+          rs_val-type = 3. IF lv_fp_a < lv_fp_b.  rs_val-num = 1. ENDIF. RETURN.
+        WHEN `>`.
+          rs_val-type = 3. IF lv_fp_a > lv_fp_b.  rs_val-num = 1. ENDIF. RETURN.
+        WHEN `<=`.
+          rs_val-type = 3. IF lv_fp_a <= lv_fp_b. rs_val-num = 1. ENDIF. RETURN.
+        WHEN `>=`.
+          rs_val-type = 3. IF lv_fp_a >= lv_fp_b. rs_val-num = 1. ENDIF. RETURN.
+      ENDCASE.
+    ENDIF.
+
     IF iv_op = `+`.
       DATA ls_lval TYPE zif_mjs=>ty_value.
       DATA ls_rval TYPE zif_mjs=>ty_value.
