@@ -27,6 +27,8 @@
     "global_class": true,
     "identical_form_names": true,
     "implement_methods": true,
+    "max_one_statement": true,
+    "indentation": true,
     "local_testclass_consistency": true,
     "message_exists": true,
     "method_implemented_twice": true,

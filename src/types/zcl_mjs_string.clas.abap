@@ -151,10 +151,18 @@ CLASS zcl_mjs_string IMPLEMENTATION.
           ENDIF.
           DATA lv_slen TYPE i.
           lv_slen = strlen( is_obj-str ).
-          IF lv_start < 0. lv_start = 0. ENDIF.
-          IF lv_start > lv_slen. lv_start = lv_slen. ENDIF.
-          IF lv_end < 0. lv_end = 0. ENDIF.
-          IF lv_end > lv_slen. lv_end = lv_slen. ENDIF.
+          IF lv_start < 0. 
+            lv_start = 0. 
+          ENDIF.
+          IF lv_start > lv_slen. 
+            lv_start = lv_slen. 
+          ENDIF.
+          IF lv_end < 0. 
+            lv_end = 0. 
+          ENDIF.
+          IF lv_end > lv_slen. 
+            lv_end = lv_slen. 
+          ENDIF.
           IF lv_start > lv_end.
             DATA lv_tmp TYPE i.
             lv_tmp = lv_start.
@@ -252,8 +260,12 @@ CLASS zcl_mjs_string IMPLEMENTATION.
             DATA lv_rxnxt   TYPE i.
             lv_rxint   = CONV i( ls_rep1-num ).
             " bitmask: 1=global, 2=ignoreCase — use explicit comparison (avoid integer division)
-            IF lv_rxint = 1 OR lv_rxint = 3. lv_rxglob  = abap_true. ENDIF.
-            IF lv_rxint = 2 OR lv_rxint = 3. lv_rxicase = abap_true. ENDIF.
+            IF lv_rxint = 1 OR lv_rxint = 3. 
+              lv_rxglob  = abap_true. 
+            ENDIF.
+            IF lv_rxint = 2 OR lv_rxint = 3. 
+              lv_rxicase = abap_true. 
+            ENDIF.
             CLEAR lv_rxout.
             lv_rxrem = is_obj-str.
             DATA lv_rx_pos TYPE i VALUE 0.
@@ -261,7 +273,9 @@ CLASS zcl_mjs_string IMPLEMENTATION.
             IF strlen( ls_rep1-str ) = 0.
               " Empty regex matches empty string between everywhere
               DO.
-                IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
+                IF lv_rx_pos > strlen( lv_rxrem ). 
+                  EXIT. 
+                ENDIF.
                 DATA ls_e_res TYPE match_result.
                 ls_e_res-offset = lv_rx_pos.
                 ls_e_res-length = 0.
@@ -273,7 +287,9 @@ CLASS zcl_mjs_string IMPLEMENTATION.
               ENDDO.
             ELSE.
               DO.
-                IF lv_rx_pos > strlen( lv_rxrem ). EXIT. ENDIF.
+                IF lv_rx_pos > strlen( lv_rxrem ). 
+                  EXIT. 
+                ENDIF.
                 DATA ls_rx_res TYPE match_result.
                 IF lv_rxicase = abap_true.
                   FIND REGEX ls_rep1-str IN SECTION OFFSET lv_rx_pos OF lv_rxrem
@@ -416,7 +432,9 @@ CLASS zcl_mjs_string IMPLEMENTATION.
           DATA lv_spl_count TYPE i.
           lv_spl_count = 0.
           LOOP AT lt_spl_items INTO DATA(lv_spl_item) WHERE table_line IS NOT INITIAL OR table_line = ``.
-            IF lv_spl_count >= lv_spl_limit. EXIT. ENDIF.
+            IF lv_spl_count >= lv_spl_limit. 
+              EXIT. 
+            ENDIF.
             lo_spl_arr->push( zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( lv_spl_item ) ) ).
             lv_spl_count = lv_spl_count + 1.
           ENDLOOP.
