@@ -23,7 +23,7 @@ CLASS zcl_mjs_builtins DEFINITION PUBLIC.
       IMPORTING is_val        TYPE zif_mjs=>ty_value
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
     " Applies the descriptor when args are (object, prop, descriptor-object);
-    " returns the object (type=6) when applied, undefined (type=0) otherwise.
+    " returns the object when applied, undefined otherwise.
     CLASS-METHODS define_property
       IMPORTING it_args       TYPE zif_mjs=>tt_value_slots
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
@@ -47,11 +47,11 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     ENDIF.
     DATA lv_is_true TYPE abap_bool.
     CASE ls_in-type.
-      WHEN 0 OR 5.
+      WHEN zif_mjs=>c_type_undefined OR zif_mjs=>c_type_null.
         lv_is_true = abap_false.
-      WHEN 1 OR 3.
+      WHEN zif_mjs=>c_type_number OR zif_mjs=>c_type_bool.
         lv_is_true = COND #( WHEN ls_in-num <> 0 THEN abap_true ELSE abap_false ).
-      WHEN 2.
+      WHEN zif_mjs=>c_type_string.
         lv_is_true = COND #( WHEN ls_in-str IS NOT INITIAL THEN abap_true ELSE abap_false ).
       WHEN OTHERS.
         lv_is_true = abap_true.
@@ -61,7 +61,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
 
   METHOD regexp_val.
     " Regex value: str = pattern, num = flag bitmask (g=1, i=2)
-    rs_val-type = 8.
+    rs_val-type = zif_mjs=>c_type_regex.
     rs_val-str  = iv_pattern.
     DATA lv_flagnum TYPE f VALUE 0.
     IF iv_flags CS `g`.
@@ -92,7 +92,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     ELSE.
       ls_in = zcl_mjs_val=>undefined_val( ).
     ENDIF.
-    IF ls_in-type = 0 OR ls_in-type = 4.
+    IF ls_in-type = zif_mjs=>c_type_undefined OR ls_in-type = zif_mjs=>c_type_function.
       rs_val = zcl_mjs_val=>undefined_val( ).
     ELSE.
       rs_val = zcl_mjs_val=>string_val( zcl_mjs_json=>stringify( ls_in ) ).
@@ -119,7 +119,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD object_keys.
-    IF is_val-type = 6 AND is_val-obj IS BOUND.
+    IF is_val-type = zif_mjs=>c_type_object AND is_val-obj IS BOUND.
       DATA lt_refs TYPE zif_mjs=>tt_nodes.
       LOOP AT is_val-obj->props ASSIGNING FIELD-SYMBOL(<prop>).
         APPEND zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( <prop>-key ) ) TO lt_refs.
@@ -138,7 +138,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     DATA(ls_obj)  = it_args[ 1 ].
     DATA(ls_prop) = it_args[ 2 ].
     DATA(ls_desc) = it_args[ 3 ].
-    IF ls_obj-type <> 6 OR ls_obj-obj IS NOT BOUND OR ls_desc-type <> 6 OR ls_desc-obj IS NOT BOUND.
+    IF ls_obj-type <> zif_mjs=>c_type_object OR ls_obj-obj IS NOT BOUND OR ls_desc-type <> zif_mjs=>c_type_object OR ls_desc-obj IS NOT BOUND.
       RETURN.
     ENDIF.
     DATA(lr_vdesc) = ls_desc-obj->get( `value` ).
@@ -148,10 +148,9 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
       DATA(lr_get) = ls_desc-obj->get( `get` ).
       IF lr_get IS BOUND.
         DATA(ls_get_val) = zcl_mjs_val=>unbox_value( lr_get ).
-        IF ls_get_val-type = 4.
-          " type=10: getter wrapper — evaluated on property access
+        IF ls_get_val-type = zif_mjs=>c_type_function.
           DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
-          ls_getter_wrap-type = 10.
+          ls_getter_wrap-type = zif_mjs=>c_type_getter.
           ls_getter_wrap-fn   = ls_get_val-fn.
           ls_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_prop ) ir_val = zcl_mjs_val=>box_value( ls_getter_wrap ) ).
         ENDIF.
@@ -171,7 +170,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     rs_val-obj->set( iv_key = `[[SetData]]` ir_val = zcl_mjs_val=>box_value( ls_set_data ) ).
 
     " Handle constructor argument (iterable/array)
-    IF is_init-type = 7 AND is_init-arr IS BOUND.
+    IF is_init-type = zif_mjs=>c_type_array AND is_init-arr IS BOUND.
       LOOP AT is_init-arr->items INTO DATA(lr_item).
         " highly simplified: just push all init items
         ls_set_data-arr->push( lr_item ).
@@ -188,18 +187,18 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     DATA(ls_data) = zcl_mjs_val=>unbox_value( lr_data ).
     DATA(ls_target) = it_args[ 1 ].
     DATA(lv_found) = abap_false.
-    IF ls_data-type = 7 AND ls_data-arr IS BOUND.
+    IF ls_data-type = zif_mjs=>c_type_array AND ls_data-arr IS BOUND.
       LOOP AT ls_data-arr->items INTO DATA(lr_item).
         DATA(ls_item) = zcl_mjs_val=>unbox_value( lr_item ).
         " highly simplified: check for value equality (like JS === but for test purposes)
         IF ls_item-type = ls_target-type.
           CASE ls_item-type.
-            WHEN 1.
+            WHEN zif_mjs=>c_type_number.
               IF ls_item-num = ls_target-num.
                 lv_found = abap_true.
                 EXIT.
               ENDIF.
-            WHEN 2.
+            WHEN zif_mjs=>c_type_string.
               IF ls_item-str = ls_target-str.
                 lv_found = abap_true.
                 EXIT.

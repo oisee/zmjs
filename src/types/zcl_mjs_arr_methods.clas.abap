@@ -43,7 +43,7 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
       WHEN `map`.
         IF lines( it_args ) > 0.
           READ TABLE it_args INDEX 1 INTO ls_cb.
-          IF ls_cb-type = 4 AND ls_cb-fn IS BOUND.
+          IF ls_cb-type = zif_mjs=>c_type_function AND ls_cb-fn IS BOUND.
             DATA lo_map_arr TYPE REF TO zcl_mjs_array.
             CREATE OBJECT lo_map_arr.
             lv_idx = 0.
@@ -55,7 +55,7 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
               lo_map_arr->push( zcl_mjs_val=>box_value( ls_map_result ) ).
               lv_idx = lv_idx + 1.
             ENDLOOP.
-            rs_val-type = 7.
+            rs_val-type = zif_mjs=>c_type_array.
             rs_val-arr = lo_map_arr.
           ENDIF.
         ELSE.
@@ -66,7 +66,7 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
         rs_val = zcl_mjs_val=>undefined_val( ).
         IF lines( it_args ) > 0.
           READ TABLE it_args INDEX 1 INTO ls_cb.
-          IF ls_cb-type = 4 AND ls_cb-fn IS BOUND.
+          IF ls_cb-type = zif_mjs=>c_type_function AND ls_cb-fn IS BOUND.
             lv_idx = 0.
             LOOP AT is_obj-arr->items INTO DATA(lr_find_item).
               DATA(ls_find_elem) = zcl_mjs_val=>unbox_value( lr_find_item ).
@@ -86,7 +86,7 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
       WHEN `filter`.
         IF lines( it_args ) > 0.
           READ TABLE it_args INDEX 1 INTO ls_cb.
-          IF ls_cb-type = 4 AND ls_cb-fn IS BOUND.
+          IF ls_cb-type = zif_mjs=>c_type_function AND ls_cb-fn IS BOUND.
             DATA lo_flt_arr TYPE REF TO zcl_mjs_array.
             CREATE OBJECT lo_flt_arr.
             lv_idx = 0.
@@ -100,7 +100,7 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
               ENDIF.
               lv_idx = lv_idx + 1.
             ENDLOOP.
-            rs_val-type = 7.
+            rs_val-type = zif_mjs=>c_type_array.
             rs_val-arr = lo_flt_arr.
           ENDIF.
         ELSE.
