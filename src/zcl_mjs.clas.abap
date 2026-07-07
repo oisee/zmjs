@@ -26,6 +26,11 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 io_env        TYPE REF TO zcl_mjs_env
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
+    CLASS-METHODS to_primitive
+      IMPORTING is_val        TYPE zif_mjs=>ty_value
+                io_env        TYPE REF TO zcl_mjs_env
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_property_access
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_prop       TYPE string
@@ -1664,6 +1669,32 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDCASE.
   ENDMETHOD.
 
+  METHOD to_primitive.
+    " ToPrimitive: try valueOf(); if it does not yield a primitive, fall back to toString().
+    " A function's default valueOf yields its source string ("function ..."), which must
+    " also fall back to toString() so user overrides are honored.
+    rs_val = is_val.
+    IF is_val-type <> zif_mjs=>c_type_function AND is_val-type <> zif_mjs=>c_type_object.
+      RETURN.
+    ENDIF.
+    DATA(ls_v) = eval_method_call(
+      is_obj    = is_val
+      iv_method = `valueOf`
+      it_args   = VALUE #( )
+      io_env    = io_env ).
+    IF ls_v-type = zif_mjs=>c_type_undefined OR ls_v-type = zif_mjs=>c_type_function
+        OR ls_v-type = zif_mjs=>c_type_object OR ls_v-type = zif_mjs=>c_type_null
+        OR ( is_val-type = zif_mjs=>c_type_function AND ls_v-type = zif_mjs=>c_type_string AND ls_v-str CP `function *` ).
+      rs_val = eval_method_call(
+        is_obj    = is_val
+        iv_method = `toString`
+        it_args   = VALUE #( )
+        io_env    = io_env ).
+    ELSE.
+      rs_val = ls_v.
+    ENDIF.
+  ENDMETHOD.
+
   METHOD eval_bin_op.
     " Fast path: both operands are plain numbers — skip all ToPrimitive coercion
     IF is_left-type = zif_mjs=>c_type_number AND is_right-type = zif_mjs=>c_type_number.
@@ -1736,84 +1767,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
 
     IF iv_op = `+`.
-      DATA ls_lval TYPE zif_mjs=>ty_value.
-      DATA ls_rval TYPE zif_mjs=>ty_value.
-      ls_lval = is_left.
-      IF ls_lval-type = zif_mjs=>c_type_function.
-        DATA(ls_l_v) = eval_method_call(
-          is_obj    = ls_lval
-          iv_method = `valueOf`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-        IF ls_l_v-type = zif_mjs=>c_type_function OR ( ls_l_v-type = zif_mjs=>c_type_string AND ls_l_v-str CP `function *` ).
-          ls_lval = eval_method_call(
-            is_obj    = is_left
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSEIF ls_l_v-type = zif_mjs=>c_type_undefined OR ls_l_v-type = zif_mjs=>c_type_object OR ls_l_v-type = zif_mjs=>c_type_null.
-          ls_lval = eval_method_call(
-            is_obj    = is_left
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSE.
-          ls_lval = ls_l_v.
-        ENDIF.
-      ELSEIF ls_lval-type = zif_mjs=>c_type_object.
-        ls_l_v = eval_method_call(
-          is_obj    = ls_lval
-          iv_method = `valueOf`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-        IF ls_l_v-type = zif_mjs=>c_type_undefined OR ls_l_v-type = zif_mjs=>c_type_function OR ls_l_v-type = zif_mjs=>c_type_object OR ls_l_v-type = zif_mjs=>c_type_null.
-          ls_lval = eval_method_call(
-            is_obj    = is_left
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSE.
-          ls_lval = ls_l_v.
-        ENDIF.
-      ENDIF.
-      ls_rval = is_right.
-      IF ls_rval-type = zif_mjs=>c_type_function.
-        DATA(ls_r_v) = eval_method_call(
-          is_obj    = ls_rval
-          iv_method = `valueOf`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-        IF ls_r_v-type = zif_mjs=>c_type_function OR ( ls_r_v-type = zif_mjs=>c_type_string AND ls_r_v-str CP `function *` ).
-          ls_rval = eval_method_call(
-            is_obj    = is_right
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSEIF ls_r_v-type = zif_mjs=>c_type_undefined OR ls_r_v-type = zif_mjs=>c_type_object OR ls_r_v-type = zif_mjs=>c_type_null.
-          ls_rval = eval_method_call(
-            is_obj    = is_right
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSE.
-          ls_rval = ls_r_v.
-        ENDIF.
-      ELSEIF ls_rval-type = zif_mjs=>c_type_object.
-        ls_r_v = eval_method_call(
-          is_obj    = ls_rval
-          iv_method = `valueOf`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-        IF ls_r_v-type = zif_mjs=>c_type_undefined OR ls_r_v-type = zif_mjs=>c_type_function OR ls_r_v-type = zif_mjs=>c_type_object OR ls_r_v-type = zif_mjs=>c_type_null.
-          ls_rval = eval_method_call(
-            is_obj    = is_right
-            iv_method = `toString`
-            it_args   = VALUE #( )
-            io_env    = io_env ).
-        ELSE.
-          ls_rval = ls_r_v.
-        ENDIF.
-      ENDIF.
+      DATA(ls_lval) = to_primitive( is_val = is_left io_env = io_env ).
+      DATA(ls_rval) = to_primitive( is_val = is_right io_env = io_env ).
 
       IF ls_lval-type = zif_mjs=>c_type_string OR ls_rval-type = zif_mjs=>c_type_string.
         rs_val-type = zif_mjs=>c_type_string.
@@ -1927,42 +1882,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_a TYPE f.
     DATA lv_b TYPE f.
 
-    DATA ls_la TYPE zif_mjs=>ty_value.
-    DATA ls_ra TYPE zif_mjs=>ty_value.
-    ls_la = is_left.
-    IF ls_la-type = zif_mjs=>c_type_function OR ls_la-type = zif_mjs=>c_type_object.
-      DATA(ls_la_v) = eval_method_call(
-        is_obj    = ls_la
-        iv_method = `valueOf`
-        it_args   = VALUE #( )
-        io_env    = io_env ).
-      IF ls_la_v-type = zif_mjs=>c_type_undefined OR ls_la_v-type = zif_mjs=>c_type_function OR ls_la_v-type = zif_mjs=>c_type_object OR ls_la_v-type = zif_mjs=>c_type_null.
-        ls_la = eval_method_call(
-          is_obj    = is_left
-          iv_method = `toString`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-      ELSE.
-        ls_la = ls_la_v.
-      ENDIF.
-    ENDIF.
-    ls_ra = is_right.
-    IF ls_ra-type = zif_mjs=>c_type_function OR ls_ra-type = zif_mjs=>c_type_object.
-      DATA(ls_ra_v) = eval_method_call(
-        is_obj    = ls_ra
-        iv_method = `valueOf`
-        it_args   = VALUE #( )
-        io_env    = io_env ).
-      IF ls_ra_v-type = zif_mjs=>c_type_undefined OR ls_ra_v-type = zif_mjs=>c_type_function OR ls_ra_v-type = zif_mjs=>c_type_object OR ls_ra_v-type = zif_mjs=>c_type_null.
-        ls_ra = eval_method_call(
-          is_obj    = is_right
-          iv_method = `toString`
-          it_args   = VALUE #( )
-          io_env    = io_env ).
-      ELSE.
-        ls_ra = ls_ra_v.
-      ENDIF.
-    ENDIF.
+    DATA(ls_la) = to_primitive( is_val = is_left io_env = io_env ).
+    DATA(ls_ra) = to_primitive( is_val = is_right io_env = io_env ).
 
     lv_a = zcl_mjs_val=>to_number( ls_la ).
     lv_b = zcl_mjs_val=>to_number( ls_ra ).
