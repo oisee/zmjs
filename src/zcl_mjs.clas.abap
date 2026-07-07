@@ -4,6 +4,14 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING iv_source        TYPE string
       RETURNING VALUE(rv_output) TYPE string
       RAISING zcx_mjs_runtime.
+    " Public so built-in methods (e.g. array map/filter) can invoke JS callbacks
+    CLASS-METHODS call_function
+      IMPORTING ir_fn         TYPE REF TO data
+                it_args       TYPE zif_mjs=>tt_value_slots
+                io_env        TYPE REF TO zcl_mjs_env
+                ir_this       TYPE REF TO data OPTIONAL
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
 
   PRIVATE SECTION.
     CLASS-METHODS eval_node
@@ -30,13 +38,6 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
                 ir_obj_node   TYPE REF TO data OPTIONAL
-      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
-      RAISING zcx_mjs_runtime.
-    CLASS-METHODS call_function
-      IMPORTING ir_fn         TYPE REF TO data
-                it_args       TYPE zif_mjs=>tt_value_slots
-                io_env        TYPE REF TO zcl_mjs_env
-                ir_this       TYPE REF TO data OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
     CLASS-METHODS compile_function
@@ -488,16 +489,7 @@ CLASS zcl_mjs IMPLEMENTATION.
 
       WHEN zif_mjs=>c_node_regex.
         " str = pattern, op = flags string (stored by parser)
-        rs_val-type = 8.
-        rs_val-str  = <n>-str.
-        DATA lv_rx_flagnum TYPE f VALUE 0.
-        IF <n>-op CS `g`. 
-          lv_rx_flagnum = lv_rx_flagnum + 1. 
-        ENDIF.
-        IF <n>-op CS `i`. 
-          lv_rx_flagnum = lv_rx_flagnum + 2. 
-        ENDIF.
-        rs_val-num = lv_rx_flagnum.
+        rs_val = zcl_mjs_builtins=>regexp_val( iv_pattern = <n>-str iv_flags = <n>-op ).
 
       WHEN zif_mjs=>c_node_ident.
         " Fast path: direct slot read (no method call overhead)
@@ -945,71 +937,19 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDLOOP.
 
         IF <n>-str = `Boolean`.
-          DATA ls_bool_in TYPE zif_mjs=>ty_value.
-          IF lines( lt_call_args ) > 0.
-            ls_bool_in = lt_call_args[ 1 ].
-          ELSE.
-            ls_bool_in = zcl_mjs_val=>undefined_val( ).
-          ENDIF.
-          DATA lv_is_true TYPE abap_bool.
-          CASE ls_bool_in-type.
-            WHEN 0 OR 5. 
-              lv_is_true = abap_false.
-            WHEN 1 OR 3. 
-              lv_is_true = COND #( WHEN ls_bool_in-num <> 0 THEN abap_true ELSE abap_false ).
-            WHEN 2.      
-              lv_is_true = COND #( WHEN ls_bool_in-str IS NOT INITIAL THEN abap_true ELSE abap_false ).
-            WHEN OTHERS. 
-              lv_is_true = abap_true.
-          ENDCASE.
-          rs_val = zcl_mjs_val=>bool_val( lv_is_true ).
+          rs_val = zcl_mjs_builtins=>boolean_from_args( lt_call_args ).
           RETURN.
         ENDIF.
         IF <n>-str = `RegExp`.
-          rs_val-type = 8.
-          IF lines( lt_call_args ) >= 1.
-            rs_val-str = zcl_mjs_val=>to_string( lt_call_args[ 1 ] ).
-          ENDIF.
-          IF lines( lt_call_args ) >= 2.
-            DATA(lv_flags) = zcl_mjs_val=>to_string( lt_call_args[ 2 ] ).
-            DATA lv_new_rx_flagnum TYPE f VALUE 0.
-            IF lv_flags CS `g`. 
-              lv_new_rx_flagnum = lv_new_rx_flagnum + 1. 
-            ENDIF.
-            IF lv_flags CS `i`. 
-              lv_new_rx_flagnum = lv_new_rx_flagnum + 2. 
-            ENDIF.
-            rs_val-num = lv_new_rx_flagnum.
-          ENDIF.
+          rs_val = zcl_mjs_builtins=>regexp_from_args( lt_call_args ).
           RETURN.
         ENDIF.
         IF <n>-str = `JSON.stringify`.
-          DATA ls_jsin TYPE zif_mjs=>ty_value.
-          IF lines( lt_call_args ) > 0.
-            ls_jsin = lt_call_args[ 1 ].
-          ELSE.
-            ls_jsin = zcl_mjs_val=>undefined_val( ).
-          ENDIF.
-          IF ls_jsin-type = 0 OR ls_jsin-type = 4.
-            rs_val = zcl_mjs_val=>undefined_val( ).
-          ELSE.
-            rs_val = zcl_mjs_val=>string_val( zcl_mjs_json=>stringify( ls_jsin ) ).
-          ENDIF.
+          rs_val = zcl_mjs_builtins=>json_stringify( lt_call_args ).
           RETURN.
         ENDIF.
         IF <n>-str = `console.log`.
-          DATA lv_parts TYPE string.
-          CLEAR lv_parts.
-          DATA lv_first TYPE abap_bool VALUE abap_true.
-          LOOP AT lt_call_args INTO DATA(ls_cav).
-            IF lv_first = abap_false.
-              lv_parts = lv_parts && ` `.
-            ENDIF.
-            lv_parts = lv_parts && zcl_mjs_val=>to_string( ls_cav ).
-            lv_first = abap_false.
-          ENDLOOP.
-          io_env->append_output( lv_parts && cl_abap_char_utilities=>newline ).
-          rs_val = zcl_mjs_val=>undefined_val( ).
+          rs_val = zcl_mjs_builtins=>console_log( it_args = lt_call_args io_env = io_env ).
           RETURN.
         ENDIF.
         IF <n>-str = `super`.
@@ -1038,29 +978,10 @@ CLASS zcl_mjs IMPLEMENTATION.
             FIELD-SYMBOLS <efn_intercept> TYPE zif_mjs=>ty_function.
             ASSIGN ls_efn-fn->* TO <efn_intercept>.
             IF sy-subrc = 0 AND <efn_intercept>-name = `defineProperty`.
-              IF lines( lt_call_args ) >= 3.
-                DATA(ls_ef_dp_obj)  = lt_call_args[ 1 ].
-                DATA(ls_ef_dp_prop) = lt_call_args[ 2 ].
-                DATA(ls_ef_dp_desc) = lt_call_args[ 3 ].
-                IF ls_ef_dp_obj-type = 6 AND ls_ef_dp_obj-obj IS BOUND AND ls_ef_dp_desc-type = 6 AND ls_ef_dp_desc-obj IS BOUND.
-                  DATA(lr_ef_dp_vdesc) = ls_ef_dp_desc-obj->get( `value` ).
-                  IF lr_ef_dp_vdesc IS BOUND.
-                    ls_ef_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_ef_dp_prop ) ir_val = lr_ef_dp_vdesc ).
-                  ELSE.
-                    DATA(lr_ef_dp_get) = ls_ef_dp_desc-obj->get( `get` ).
-                    IF lr_ef_dp_get IS BOUND.
-                      DATA(ls_ef_get_val) = zcl_mjs_val=>unbox_value( lr_ef_dp_get ).
-                      IF ls_ef_get_val-type = 4.
-                        DATA ls_ef_get_wrap TYPE zif_mjs=>ty_value.
-                        ls_ef_get_wrap-type = 10.
-                        ls_ef_get_wrap-fn   = ls_ef_get_val-fn.
-                        ls_ef_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_ef_dp_prop ) ir_val = zcl_mjs_val=>box_value( ls_ef_get_wrap ) ).
-                      ENDIF.
-                    ENDIF.
-                  ENDIF.
-                  rs_val = ls_ef_dp_obj.
-                  RETURN.
-                ENDIF.
+              DATA(ls_ef_dp_res) = zcl_mjs_builtins=>define_property( lt_call_args ).
+              IF ls_ef_dp_res-type = 6.
+                rs_val = ls_ef_dp_res.
+                RETURN.
               ENDIF.
             ENDIF.
 
@@ -1078,29 +999,10 @@ CLASS zcl_mjs IMPLEMENTATION.
           FIELD-SYMBOLS <fn_intercept> TYPE zif_mjs=>ty_function.
           ASSIGN ls_fn-fn->* TO <fn_intercept>.
           IF sy-subrc = 0 AND <fn_intercept>-name = `defineProperty`.
-            IF lines( lt_call_args ) >= 3.
-              DATA(ls_f_dp_obj)  = lt_call_args[ 1 ].
-              DATA(ls_f_dp_prop) = lt_call_args[ 2 ].
-              DATA(ls_f_dp_desc) = lt_call_args[ 3 ].
-              IF ls_f_dp_obj-type = 6 AND ls_f_dp_obj-obj IS BOUND AND ls_f_dp_desc-type = 6 AND ls_f_dp_desc-obj IS BOUND.
-                DATA(lr_f_dp_vdesc) = ls_f_dp_desc-obj->get( `value` ).
-                IF lr_f_dp_vdesc IS BOUND.
-                  ls_f_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_f_dp_prop ) ir_val = lr_f_dp_vdesc ).
-                ELSE.
-                  DATA(lr_f_dp_get) = ls_f_dp_desc-obj->get( `get` ).
-                  IF lr_f_dp_get IS BOUND.
-                    DATA(ls_f_get_val) = zcl_mjs_val=>unbox_value( lr_f_dp_get ).
-                    IF ls_f_get_val-type = 4.
-                      DATA ls_f_get_wrap TYPE zif_mjs=>ty_value.
-                      ls_f_get_wrap-type = 10.
-                      ls_f_get_wrap-fn   = ls_f_get_val-fn.
-                      ls_f_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_f_dp_prop ) ir_val = zcl_mjs_val=>box_value( ls_f_get_wrap ) ).
-                    ENDIF.
-                  ENDIF.
-                ENDIF.
-                rs_val = ls_f_dp_obj.
-                RETURN.
-              ENDIF.
+            DATA(ls_f_dp_res) = zcl_mjs_builtins=>define_property( lt_call_args ).
+            IF ls_f_dp_res-type = 6.
+              rs_val = ls_f_dp_res.
+              RETURN.
             ENDIF.
           ENDIF.
 
@@ -1114,60 +1016,29 @@ CLASS zcl_mjs IMPLEMENTATION.
           ASSIGN <n>-object->* TO <obj_ident>.
           IF sy-subrc = 0 AND <obj_ident>-kind = zif_mjs=>c_node_ident.
             IF <obj_ident>-str = `Date` AND <n>-property = `now`.
-              " Return current timestamp in milliseconds
-              GET TIME STAMP FIELD DATA(lv_ts).
-              " ABAP timestamp is YYYYMMDDHHMMSS.mmmuuu
-              " Convert to Unix epoch milliseconds
-              " This is a rough estimation but should work for test purposes
-              " Better to use a library for precise conversion if available
-              " For now, let's return a number that is definitely > 0
-              rs_val = zcl_mjs_val=>number_val( 1712490000000 ). " April 7, 2024 (placeholder)
-              " Actually, let's try to get a more realistic value if possible via standard components
-              " but to keep it simple and stable for the test:
+              rs_val = zcl_mjs_builtins=>date_now( ).
               RETURN.
             ENDIF.
             IF <obj_ident>-str = `Object`.
               IF <n>-property = `keys`.
+                DATA ls_ok_in TYPE zif_mjs=>ty_value.
                 IF lines( <n>-args ) > 0.
-                  DATA(ls_ok_in) = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
-                  IF ls_ok_in-type = 6 AND ls_ok_in-obj IS BOUND.
-                    DATA lt_ok_refs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-                    LOOP AT ls_ok_in-obj->props ASSIGNING FIELD-SYMBOL(<p_ok>).
-                      APPEND zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( <p_ok>-key ) ) TO lt_ok_refs.
-                    ENDLOOP.
-                    rs_val = zcl_mjs_val=>array_val( lt_ok_refs ).
-                    RETURN.
-                  ENDIF.
+                  ls_ok_in = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
                 ENDIF.
-                rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
+                rs_val = zcl_mjs_builtins=>object_keys( ls_ok_in ).
                 RETURN.
               ELSEIF <n>-property = `defineProperty`.
+                rs_val = zcl_mjs_val=>undefined_val( ).
                 IF lines( <n>-args ) >= 3.
-                  DATA(ls_dp_obj)  = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
-                  DATA(ls_dp_prop) = eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ).
-                  DATA(ls_dp_desc) = eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ).
-                  IF ls_dp_obj-type = 6 AND ls_dp_obj-obj IS BOUND AND ls_dp_desc-type = 6 AND ls_dp_desc-obj IS BOUND.
-                    DATA(lr_dp_vdesc) = ls_dp_desc-obj->get( `value` ).
-                    IF lr_dp_vdesc IS BOUND.
-                      ls_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_dp_prop ) ir_val = lr_dp_vdesc ).
-                    ELSE.
-                      " Handle getter/setter
-                      DATA(lr_dp_get) = ls_dp_desc-obj->get( `get` ).
-                      IF lr_dp_get IS BOUND.
-                        DATA(ls_get_val) = zcl_mjs_val=>unbox_value( lr_dp_get ).
-                        IF ls_get_val-type = 4.
-                          DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
-                          ls_getter_wrap-type = 10.
-                          ls_getter_wrap-fn   = ls_get_val-fn.
-                          ls_dp_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_dp_prop ) ir_val = zcl_mjs_val=>box_value( ls_getter_wrap ) ).
-                        ENDIF.
-                      ENDIF.
-                    ENDIF.
-                    rs_val = ls_dp_obj.
-                    RETURN.
+                  DATA lt_dp_args TYPE zif_mjs=>tt_value_slots.
+                  APPEND eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ) TO lt_dp_args.
+                  APPEND eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ) TO lt_dp_args.
+                  APPEND eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ) TO lt_dp_args.
+                  DATA(ls_dp_res) = zcl_mjs_builtins=>define_property( lt_dp_args ).
+                  IF ls_dp_res-type = 6.
+                    rs_val = ls_dp_res.
                   ENDIF.
                 ENDIF.
-                rs_val = zcl_mjs_val=>undefined_val( ).
                 RETURN.
               ENDIF.
             ENDIF.
@@ -1482,48 +1353,18 @@ CLASS zcl_mjs IMPLEMENTATION.
 
         IF ls_cls-type IS INITIAL AND lv_cls_name IS NOT INITIAL.
           IF lv_cls_name = `RegExp`.
-            rs_val-type = 8.
             DATA lt_regex_args TYPE zif_mjs=>tt_value_slots.
             LOOP AT <n>-args INTO DATA(lr_ra).
               APPEND eval_node( ir_node = lr_ra io_env = io_env ) TO lt_regex_args.
             ENDLOOP.
-            IF lines( lt_regex_args ) >= 1.
-              rs_val-str = zcl_mjs_val=>to_string( lt_regex_args[ 1 ] ).
-            ENDIF.
-            IF lines( lt_regex_args ) >= 2.
-              DATA(lv_new_flags) = zcl_mjs_val=>to_string( lt_regex_args[ 2 ] ).
-              DATA lv_new_rx_fn TYPE f VALUE 0.
-              IF lv_new_flags CS `g`. 
-                lv_new_rx_fn = lv_new_rx_fn + 1. 
-              ENDIF.
-              IF lv_new_flags CS `i`. 
-                lv_new_rx_fn = lv_new_rx_fn + 2. 
-              ENDIF.
-              rs_val-num = lv_new_rx_fn.
-            ENDIF.
+            rs_val = zcl_mjs_builtins=>regexp_from_args( lt_regex_args ).
             RETURN.
           ELSEIF lv_cls_name = `Set`.
-            rs_val = zcl_mjs_val=>object_val( ).
-            " Prototype with has() method
-            DATA(lo_set_proto) = zcl_mjs_val=>object_val( ).
-            rs_val-obj->proto = lo_set_proto-obj.
-
-            " Internal storage for Set items (highly simplified for now)
-            " Use an array in the object's properties for simulation
-            DATA(lo_set_data) = zcl_mjs_val=>array_val( VALUE #( ) ).
-            rs_val-obj->set( iv_key = `[[SetData]]` ir_val = zcl_mjs_val=>box_value( lo_set_data ) ).
-
-            " Handle constructor argument (iterable/array)
+            DATA ls_set_init TYPE zif_mjs=>ty_value.
             IF lines( <n>-args ) >= 1.
-              DATA(lr_set_arg) = <n>-args[ 1 ].
-              DATA(ls_set_init) = eval_node( ir_node = lr_set_arg io_env = io_env ).
-              IF ls_set_init-type = 7 AND ls_set_init-arr IS BOUND.
-                LOOP AT ls_set_init-arr->items INTO DATA(lr_set_item).
-                  " highly simplified: just push all init items
-                  lo_set_data-arr->push( lr_set_item ).
-                ENDLOOP.
-              ENDIF.
+              ls_set_init = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
             ENDIF.
+            rs_val = zcl_mjs_builtins=>new_set( ls_set_init ).
             RETURN.
           ENDIF.
           ls_cls = io_env->get( lv_cls_name ).
@@ -1749,27 +1590,6 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD eval_method_call.
-    DATA ls_map_cb      TYPE zif_mjs=>ty_value.
-    DATA lo_map_arr     TYPE REF TO zcl_mjs_array.
-    DATA lv_map_idx     TYPE i.
-    DATA lr_map_item    TYPE REF TO data.
-    DATA ls_map_elem    TYPE zif_mjs=>ty_value.
-    DATA lt_map_args    TYPE zif_mjs=>tt_value_slots.
-    DATA ls_map_result  TYPE zif_mjs=>ty_value.
-    DATA ls_find_cb     TYPE zif_mjs=>ty_value.
-    DATA lv_find_idx    TYPE i.
-    DATA lr_find_item   TYPE REF TO data.
-    DATA ls_find_elem   TYPE zif_mjs=>ty_value.
-    DATA lt_find_args   TYPE zif_mjs=>tt_value_slots.
-    DATA ls_find_result TYPE zif_mjs=>ty_value.
-    DATA ls_flt_cb      TYPE zif_mjs=>ty_value.
-    DATA lo_flt_arr     TYPE REF TO zcl_mjs_array.
-    DATA lv_flt_idx     TYPE i.
-    DATA lr_flt_item    TYPE REF TO data.
-    DATA ls_flt_elem    TYPE zif_mjs=>ty_value.
-    DATA lt_flt_args    TYPE zif_mjs=>tt_value_slots.
-    DATA ls_flt_result  TYPE zif_mjs=>ty_value.
-
     " check if method is defined on the object it was called on, or its prototype
     DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method io_env = io_env ).
 
@@ -1791,289 +1611,29 @@ CLASS zcl_mjs IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " Handle built-in array methods (map, filter, find) when array is returned from function or otherwise not a direct variable
-    IF is_obj-type = 7.
-      IF iv_method = `map`.
-        IF lines( it_args ) > 0.
-          READ TABLE it_args INDEX 1 INTO ls_map_cb.
-          IF ls_map_cb-type = 4 AND ls_map_cb-fn IS BOUND.
-            CREATE OBJECT lo_map_arr.
-            lv_map_idx = 0.
-            LOOP AT is_obj-arr->items INTO lr_map_item.
-              ls_map_elem = zcl_mjs_val=>unbox_value( lr_map_item ).
-              CLEAR lt_map_args.
-              APPEND ls_map_elem TO lt_map_args.
-              APPEND zcl_mjs_val=>number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
-              APPEND is_obj TO lt_map_args.
-              ls_map_result = call_function(
-                ir_fn   = ls_map_cb-fn
-                it_args = lt_map_args
-                io_env  = io_env ).
-              lo_map_arr->push( zcl_mjs_val=>box_value( ls_map_result ) ).
-              lv_map_idx = lv_map_idx + 1.
-            ENDLOOP.
-            rs_val-type = 7.
-            rs_val-arr = lo_map_arr.
-          ENDIF.
-        ELSE.
-          rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
-        ENDIF.
-        RETURN.
-      ELSEIF iv_method = `filter`.
-        IF lines( it_args ) > 0.
-          READ TABLE it_args INDEX 1 INTO ls_flt_cb.
-          IF ls_flt_cb-type = 4 AND ls_flt_cb-fn IS BOUND.
-            CREATE OBJECT lo_flt_arr.
-            lv_flt_idx = 0.
-            LOOP AT is_obj-arr->items INTO lr_flt_item.
-              ls_flt_elem = zcl_mjs_val=>unbox_value( lr_flt_item ).
-              CLEAR lt_flt_args.
-              APPEND ls_flt_elem TO lt_flt_args.
-              APPEND zcl_mjs_val=>number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
-              APPEND is_obj TO lt_flt_args.
-              ls_flt_result = call_function(
-                ir_fn   = ls_flt_cb-fn
-                it_args = lt_flt_args
-                io_env  = io_env ).
-              IF zcl_mjs_val=>is_true( ls_flt_result ) = abap_true.
-                lo_flt_arr->push( lr_flt_item ).
-              ENDIF.
-              lv_flt_idx = lv_flt_idx + 1.
-            ENDLOOP.
-            rs_val-type = 7.
-            rs_val-arr = lo_flt_arr.
-          ENDIF.
-        ELSE.
-          rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
-        ENDIF.
-        RETURN.
-      ELSEIF iv_method = `find`.
-        rs_val = zcl_mjs_val=>undefined_val( ).
-        IF lines( it_args ) > 0.
-          READ TABLE it_args INDEX 1 INTO ls_find_cb.
-          IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
-            lv_find_idx = 0.
-            LOOP AT is_obj-arr->items INTO lr_find_item.
-              ls_find_elem = zcl_mjs_val=>unbox_value( lr_find_item ).
-              CLEAR lt_find_args.
-              APPEND ls_find_elem TO lt_find_args.
-              APPEND zcl_mjs_val=>number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
-              APPEND is_obj TO lt_find_args.
-              ls_find_result = call_function(
-                ir_fn   = ls_find_cb-fn
-                it_args = lt_find_args
-                io_env  = io_env ).
-              IF zcl_mjs_val=>is_true( ls_find_result ) = abap_true.
-                rs_val = ls_find_elem.
-                RETURN.
-              ENDIF.
-              lv_find_idx = lv_find_idx + 1.
-            ENDLOOP.
-          ENDIF.
-        ENDIF.
-        RETURN.
-      ENDIF.
-    ENDIF.
-
     CASE is_obj-type.
       WHEN 6.
         IF iv_method = `has` AND is_obj-obj->has( `[[SetData]]` ).
           " Set mock behavior for 'has()'
-          DATA(lr_set_data_ref) = is_obj-obj->get( `[[SetData]]` ).
-          IF lr_set_data_ref IS BOUND AND lines( it_args ) >= 1.
-            DATA(ls_set_data_val) = zcl_mjs_val=>unbox_value( lr_set_data_ref ).
-            DATA(ls_has_target) = it_args[ 1 ].
-            DATA(lv_found_has) = abap_false.
-            IF ls_set_data_val-type = 7 AND ls_set_data_val-arr IS BOUND.
-              LOOP AT ls_set_data_val-arr->items INTO DATA(lr_has_item).
-                DATA(ls_has_item_val) = zcl_mjs_val=>unbox_value( lr_has_item ).
-                " highly simplified: check for value equality (like JS === but for test purposes)
-                IF ls_has_item_val-type = ls_has_target-type.
-                  CASE ls_has_item_val-type.
-                    WHEN 1. 
-                      IF ls_has_item_val-num = ls_has_target-num. 
-                        lv_found_has = abap_true. 
-                        EXIT. 
-                      ENDIF.
-                    WHEN 2. 
-                      IF ls_has_item_val-str = ls_has_target-str. 
-                        lv_found_has = abap_true. 
-                        EXIT. 
-                      ENDIF.
-                    WHEN OTHERS. " just compare pointers for complex types
-                      IF ls_has_item_val-obj = ls_has_target-obj AND ls_has_item_val-arr = ls_has_target-arr AND ls_has_item_val-fn = ls_has_target-fn.
-                        lv_found_has = abap_true. 
-                        EXIT.
-                      ENDIF.
-                  ENDCASE.
-                ENDIF.
-              ENDLOOP.
-            ENDIF.
-            rs_val = zcl_mjs_val=>bool_val( lv_found_has ).
-            RETURN.
-          ENDIF.
+          rs_val = zcl_mjs_builtins=>set_has( is_obj = is_obj it_args = it_args ).
+          RETURN.
         ENDIF.
 
       WHEN 7.
-        CASE iv_method.
-          WHEN `push`.
-            LOOP AT it_args INTO DATA(ls_push_arg).
-              is_obj-arr->push( zcl_mjs_val=>box_value( ls_push_arg ) ).
-            ENDLOOP.
-            rs_val = zcl_mjs_val=>number_val( CONV f( is_obj-arr->length( ) ) ).
-
-            IF ir_obj_node IS BOUND.
-              FIELD-SYMBOLS <on_obj> TYPE zif_mjs=>ty_node.
-              ASSIGN ir_obj_node->* TO <on_obj>.
-              IF sy-subrc = 0 AND <on_obj>-kind = zif_mjs=>c_node_ident.
-                io_env->set( iv_name = <on_obj>-str is_val = is_obj ).
-              ENDIF.
-            ENDIF.
-            RETURN.
-          WHEN `map`.
-            IF lines( it_args ) > 0.
-              READ TABLE it_args INDEX 1 INTO ls_map_cb.
-              IF ls_map_cb-type = 4 AND ls_map_cb-fn IS BOUND.
-                CREATE OBJECT lo_map_arr.
-                lv_map_idx = 0.
-                LOOP AT is_obj-arr->items INTO lr_map_item.
-                  ls_map_elem = zcl_mjs_val=>unbox_value( lr_map_item ).
-                  CLEAR lt_map_args.
-                  APPEND ls_map_elem TO lt_map_args.
-                  APPEND zcl_mjs_val=>number_val( CONV f( lv_map_idx ) ) TO lt_map_args.
-                  APPEND is_obj TO lt_map_args.
-                  ls_map_result = call_function(
-                    ir_fn   = ls_map_cb-fn
-                    it_args = lt_map_args
-                    io_env  = io_env ).
-                  lo_map_arr->push( zcl_mjs_val=>box_value( ls_map_result ) ).
-                  lv_map_idx = lv_map_idx + 1.
-                ENDLOOP.
-                rs_val-type = 7.
-                rs_val-arr = lo_map_arr.
-              ENDIF.
-            ELSE.
-              rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
-            ENDIF.
-          WHEN `find`.
-            rs_val = zcl_mjs_val=>undefined_val( ).
-            IF lines( it_args ) > 0.
-              READ TABLE it_args INDEX 1 INTO ls_find_cb.
-              IF ls_find_cb-type = 4 AND ls_find_cb-fn IS BOUND.
-                lv_find_idx = 0.
-                LOOP AT is_obj-arr->items INTO lr_find_item.
-                  ls_find_elem = zcl_mjs_val=>unbox_value( lr_find_item ).
-                  CLEAR lt_find_args.
-                  APPEND ls_find_elem TO lt_find_args.
-                  APPEND zcl_mjs_val=>number_val( CONV f( lv_find_idx ) ) TO lt_find_args.
-                  APPEND is_obj TO lt_find_args.
-                  ls_find_result = call_function(
-                    ir_fn   = ls_find_cb-fn
-                    it_args = lt_find_args
-                    io_env  = io_env ).
-                  IF zcl_mjs_val=>is_true( ls_find_result ) = abap_true.
-                    rs_val = ls_find_elem.
-                    RETURN.
-                  ENDIF.
-                  lv_find_idx = lv_find_idx + 1.
-                ENDLOOP.
-              ENDIF.
-            ENDIF.
-            RETURN.
-          WHEN `filter`.
-            IF lines( it_args ) > 0.
-              READ TABLE it_args INDEX 1 INTO ls_flt_cb.
-              IF ls_flt_cb-type = 4 AND ls_flt_cb-fn IS BOUND.
-                CREATE OBJECT lo_flt_arr.
-                lv_flt_idx = 0.
-                LOOP AT is_obj-arr->items INTO lr_flt_item.
-                  ls_flt_elem = zcl_mjs_val=>unbox_value( lr_flt_item ).
-                  CLEAR lt_flt_args.
-                  APPEND ls_flt_elem TO lt_flt_args.
-                  APPEND zcl_mjs_val=>number_val( CONV f( lv_flt_idx ) ) TO lt_flt_args.
-                  APPEND is_obj TO lt_flt_args.
-                  ls_flt_result = call_function(
-                    ir_fn   = ls_flt_cb-fn
-                    it_args = lt_flt_args
-                    io_env  = io_env ).
-                  IF zcl_mjs_val=>is_true( ls_flt_result ) = abap_true.
-                    lo_flt_arr->push( lr_flt_item ).
-                  ENDIF.
-                  lv_flt_idx = lv_flt_idx + 1.
-                ENDLOOP.
-                rs_val-type = 7.
-                rs_val-arr = lo_flt_arr.
-              ENDIF.
-            ELSE.
-              rs_val = zcl_mjs_val=>array_val( VALUE #( ) ).
-            ENDIF.
-            RETURN.
-          WHEN `splice`.
-            DATA lt_spl_args TYPE zif_mjs=>tt_value_slots.
-            lt_spl_args = it_args.
-            DATA(lv_spl_len) = is_obj-arr->length( ).
-            DATA lv_spl_start TYPE i VALUE 0.
-            IF lines( lt_spl_args ) >= 1.
-              lv_spl_start = zcl_mjs_val=>to_number( lt_spl_args[ 1 ] ).
-              IF lv_spl_start < 0.
-                lv_spl_start = lv_spl_start + lv_spl_len.
-                IF lv_spl_start < 0. 
-                  lv_spl_start = 0. 
-                ENDIF.
-              ELSEIF lv_spl_start > lv_spl_len.
-                lv_spl_start = lv_spl_len.
-              ENDIF.
-            ENDIF.
-            DATA(lv_delete_count) = lv_spl_len - lv_spl_start.
-            IF lines( lt_spl_args ) >= 2.
-              lv_delete_count = zcl_mjs_val=>to_number( lt_spl_args[ 2 ] ).
-              IF lv_delete_count < 0. 
-                lv_delete_count = 0. 
-              ENDIF.
-              IF lv_delete_count > lv_spl_len - lv_spl_start.
-                lv_delete_count = lv_spl_len - lv_spl_start.
-              ENDIF.
-            ENDIF.
-
-            DATA lt_removed TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-            DATA(lv_i) = 0.
-            WHILE lv_i < lv_delete_count.
-              APPEND is_obj-arr->items[ lv_spl_start + 1 ] TO lt_removed.
-              DELETE is_obj-arr->items INDEX lv_spl_start + 1.
-              lv_i = lv_i + 1.
-            ENDWHILE.
-
-            IF lines( lt_spl_args ) > 2.
-              DATA(lv_ins_idx) = lv_spl_start + 1.
-              LOOP AT lt_spl_args INTO DATA(ls_spl_a) FROM 3.
-                INSERT zcl_mjs_val=>box_value( ls_spl_a ) INTO is_obj-arr->items INDEX lv_ins_idx.
-                lv_ins_idx = lv_ins_idx + 1.
-              ENDLOOP.
-            ENDIF.
-            rs_val = zcl_mjs_val=>array_val( lt_removed ).
-            RETURN.
-          WHEN `sort`.
-            " rudimentary lexicographical sort for tests (JS default)
-            TYPES: BEGIN OF ty_sort,
-                     val TYPE string,
-                     ref TYPE REF TO data,
-                   END OF ty_sort.
-            DATA lt_sort TYPE STANDARD TABLE OF ty_sort WITH DEFAULT KEY.
-            LOOP AT is_obj-arr->items INTO DATA(lr_si).
-              APPEND VALUE #( val = zcl_mjs_val=>to_string( zcl_mjs_val=>unbox_value( lr_si ) ) ref = lr_si ) TO lt_sort.
-            ENDLOOP.
-            SORT lt_sort BY val ASCENDING.
-            CLEAR is_obj-arr->items.
-            LOOP AT lt_sort INTO DATA(ls_sort).
-              APPEND ls_sort-ref TO is_obj-arr->items.
-            ENDLOOP.
-            rs_val = is_obj.
-            RETURN.
-          WHEN OTHERS.
-            RAISE EXCEPTION TYPE zcx_mjs_runtime
-              EXPORTING
-                iv_error = |TypeError: { iv_method } is not a function|.
-        ENDCASE.
+        rs_val = zcl_mjs_arr_methods=>call_method(
+          is_obj    = is_obj
+          iv_method = iv_method
+          it_args   = it_args
+          io_env    = io_env ).
+        " push mutates: write the array back if it was called on a plain variable
+        IF iv_method = `push` AND ir_obj_node IS BOUND.
+          FIELD-SYMBOLS <on_obj> TYPE zif_mjs=>ty_node.
+          ASSIGN ir_obj_node->* TO <on_obj>.
+          IF sy-subrc = 0 AND <on_obj>-kind = zif_mjs=>c_node_ident.
+            io_env->set( iv_name = <on_obj>-str is_val = is_obj ).
+          ENDIF.
+        ENDIF.
+        RETURN.
       WHEN 2.
         rs_val = zcl_mjs_string=>call_method( is_obj = is_obj iv_method = iv_method it_args = it_args ).
       WHEN 4.
