@@ -248,7 +248,7 @@ CLASS zcl_mjs_string IMPLEMENTATION.
           READ TABLE it_args INDEX 1 INTO ls_rep1.
           READ TABLE it_args INDEX 2 INTO ls_rep2.
           DATA(lv_rep_to) = zcl_mjs_val=>to_string( ls_rep2 ).
-          IF ls_rep1-type = 8.
+          IF ls_rep1-type = zif_mjs=>c_type_regex.
             " RegExp first argument — use FIND loop to avoid REPLACE ALL IGNORING CASE runtime issues
             DATA lv_rxint   TYPE i.
             DATA lv_rxglob  TYPE abap_bool.
@@ -438,14 +438,14 @@ CLASS zcl_mjs_string IMPLEMENTATION.
             lo_spl_arr->push( zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( lv_spl_item ) ) ).
             lv_spl_count = lv_spl_count + 1.
           ENDLOOP.
-          rs_val-type = 7.
+          rs_val-type = zif_mjs=>c_type_array.
           rs_val-arr = lo_spl_arr.
         ELSE.
           " default: one-element array with full string
           DATA lo_spl_def TYPE REF TO zcl_mjs_array.
           CREATE OBJECT lo_spl_def.
           lo_spl_def->push( zcl_mjs_val=>box_value( is_obj ) ).
-          rs_val-type = 7.
+          rs_val-type = zif_mjs=>c_type_array.
           rs_val-arr = lo_spl_def.
         ENDIF.
       WHEN OTHERS.

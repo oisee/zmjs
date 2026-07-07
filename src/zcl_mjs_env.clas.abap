@@ -80,7 +80,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
       rs_val = parent->get( iv_name ).
       RETURN.
     ENDIF.
-    rs_val-type = 0. " undefined
+    rs_val-type = zif_mjs=>c_type_undefined. " undefined
   ENDMETHOD.
 
   METHOD has.

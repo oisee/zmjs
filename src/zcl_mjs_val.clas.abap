@@ -37,17 +37,17 @@ ENDCLASS.
 CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD number_val.
-    rs_val-type = 1.
+    rs_val-type = zif_mjs=>c_type_number.
     rs_val-num  = iv_num.
   ENDMETHOD.
 
   METHOD string_val.
-    rs_val-type = 2.
+    rs_val-type = zif_mjs=>c_type_string.
     rs_val-str  = iv_str.
   ENDMETHOD.
 
   METHOD bool_val.
-    rs_val-type = 3.
+    rs_val-type = zif_mjs=>c_type_bool.
     IF iv_bool = abap_true.
       rs_val-num = 1.
     ELSE.
@@ -56,12 +56,12 @@ CLASS zcl_mjs_val IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD object_val.
-    rs_val-type = 6.
+    rs_val-type = zif_mjs=>c_type_object.
     CREATE OBJECT rs_val-obj.
   ENDMETHOD.
 
   METHOD array_val.
-    rs_val-type = 7.
+    rs_val-type = zif_mjs=>c_type_array.
     CREATE OBJECT rs_val-arr.
     FIELD-SYMBOLS <ref> TYPE REF TO data.
     LOOP AT it_elems ASSIGNING <ref>.
@@ -70,7 +70,7 @@ CLASS zcl_mjs_val IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD undefined_val.
-    rs_val-type = 0.
+    rs_val-type = zif_mjs=>c_type_undefined.
   ENDMETHOD.
 
   METHOD box_value.
@@ -82,7 +82,7 @@ CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD unbox_value.
     IF ir_ref IS NOT BOUND.
-      rs_val-type = 0.
+      rs_val-type = zif_mjs=>c_type_undefined.
       RETURN.
     ENDIF.
     FIELD-SYMBOLS <val> TYPE zif_mjs=>ty_value.
@@ -92,13 +92,13 @@ CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD is_true.
     CASE is_val-type.
-      WHEN 0 OR 5.
+      WHEN zif_mjs=>c_type_undefined OR zif_mjs=>c_type_null.
         rv_yes = abap_false.
-      WHEN 1.
+      WHEN zif_mjs=>c_type_number.
         rv_yes = boolc( is_val-num <> 0 ).
-      WHEN 2.
+      WHEN zif_mjs=>c_type_string.
         rv_yes = boolc( is_val-str IS NOT INITIAL ).
-      WHEN 3.
+      WHEN zif_mjs=>c_type_bool.
         rv_yes = boolc( is_val-num <> 0 ).
       WHEN OTHERS.
         rv_yes = abap_true.
@@ -107,15 +107,15 @@ CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD to_number.
     CASE is_val-type.
-      WHEN 1.
+      WHEN zif_mjs=>c_type_number.
         rv_num = is_val-num.
-      WHEN 2.
+      WHEN zif_mjs=>c_type_string.
         TRY.
             rv_num = is_val-str.
           CATCH cx_root.
             rv_num = 0.
         ENDTRY.
-      WHEN 3.
+      WHEN zif_mjs=>c_type_bool.
         rv_num = is_val-num.
       WHEN OTHERS.
         rv_num = 0.
@@ -124,9 +124,9 @@ CLASS zcl_mjs_val IMPLEMENTATION.
 
   METHOD to_string.
     CASE is_val-type.
-      WHEN 0.
+      WHEN zif_mjs=>c_type_undefined.
         rv_str = `undefined`.
-      WHEN 1.
+      WHEN zif_mjs=>c_type_number.
         IF is_val-str = `NaN` OR is_val-str = `Infinity` OR is_val-str = `-Infinity`.
           rv_str = is_val-str.
         ELSE.
@@ -141,15 +141,15 @@ CLASS zcl_mjs_val IMPLEMENTATION.
             CONDENSE rv_str.
           ENDIF.
         ENDIF.
-      WHEN 2.
+      WHEN zif_mjs=>c_type_string.
         rv_str = is_val-str.
-      WHEN 3.
+      WHEN zif_mjs=>c_type_bool.
         IF is_val-num <> 0.
           rv_str = `true`.
         ELSE.
           rv_str = `false`.
         ENDIF.
-      WHEN 4.
+      WHEN zif_mjs=>c_type_function.
         FIELD-SYMBOLS <fn_ts> TYPE zif_mjs=>ty_function.
         ASSIGN is_val-fn->* TO <fn_ts>.
         IF sy-subrc = 0 AND <fn_ts>-name IS NOT INITIAL.
@@ -157,11 +157,11 @@ CLASS zcl_mjs_val IMPLEMENTATION.
         ELSE.
           rv_str = `function() { [native code] }`.
         ENDIF.
-      WHEN 5.
+      WHEN zif_mjs=>c_type_null.
         rv_str = `null`.
-      WHEN 6.
+      WHEN zif_mjs=>c_type_object.
         rv_str = `[object Object]`.
-      WHEN 7.
+      WHEN zif_mjs=>c_type_array.
         rv_str = |[array { is_val-arr->length( ) }]|.
       WHEN OTHERS.
         rv_str = `undefined`.

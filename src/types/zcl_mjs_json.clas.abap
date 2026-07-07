@@ -9,20 +9,20 @@ CLASS zcl_mjs_json IMPLEMENTATION.
 
   METHOD stringify.
     CASE is_val-type.
-      WHEN 0.  " undefined → omit marker (caller handles)
+      WHEN zif_mjs=>c_type_undefined. " omit marker (caller handles)
         rv_json = ``.
         RETURN.
-      WHEN 5.  " null
+      WHEN zif_mjs=>c_type_null.
         rv_json = `null`.
-      WHEN 1.  " number
+      WHEN zif_mjs=>c_type_number.
         IF is_val-str = `NaN` OR is_val-str = `Infinity` OR is_val-str = `-Infinity`.
           rv_json = `null`.
         ELSE.
           rv_json = zcl_mjs_val=>to_string( is_val ).
         ENDIF.
-      WHEN 3.  " boolean
+      WHEN zif_mjs=>c_type_bool.
         rv_json = COND #( WHEN is_val-num <> 0 THEN `true` ELSE `false` ).
-      WHEN 2.  " string — quote and escape
+      WHEN zif_mjs=>c_type_string. " quote and escape
         DATA lv_src  TYPE string.
         DATA lv_out  TYPE string.
         DATA lv_len  TYPE i.
@@ -61,7 +61,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
           lv_idx = lv_idx + 1.
         ENDWHILE.
         rv_json = lv_out && `"`.
-      WHEN 6.  " object
+      WHEN zif_mjs=>c_type_object.
         IF is_val-obj IS NOT BOUND.
           rv_json = `{}`.
           RETURN.
@@ -72,7 +72,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
         LOOP AT is_val-obj->props ASSIGNING FIELD-SYMBOL(<prop>).
           DATA(ls_pval) = zcl_mjs_val=>unbox_value( <prop>-val ).
           " skip undefined and function values
-          IF ls_pval-type = 0 OR ls_pval-type = 4.
+          IF ls_pval-type = zif_mjs=>c_type_undefined OR ls_pval-type = zif_mjs=>c_type_function.
             CONTINUE.
           ENDIF.
           IF lv_obj_first = abap_false.
@@ -82,7 +82,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
           lv_obj_first = abap_false.
         ENDLOOP.
         rv_json = lv_obj_out && `}`.
-      WHEN 7.  " array
+      WHEN zif_mjs=>c_type_array.
         IF is_val-arr IS NOT BOUND.
           rv_json = `[]`.
           RETURN.
@@ -99,7 +99,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
           DATA lv_elem_json TYPE string.
           IF lr_elem IS BOUND.
             DATA(ls_elem) = zcl_mjs_val=>unbox_value( lr_elem ).
-            IF ls_elem-type = 0 OR ls_elem-type = 4.
+            IF ls_elem-type = zif_mjs=>c_type_undefined OR ls_elem-type = zif_mjs=>c_type_function.
               lv_elem_json = `null`.  " undefined/function in array → null
             ELSE.
               lv_elem_json = stringify( ls_elem ).

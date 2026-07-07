@@ -1,7 +1,19 @@
 INTERFACE zif_mjs PUBLIC.
 
-  " Value types: 0=undefined, 1=number, 2=string, 3=bool,
-  "              4=function, 5=null, 6=object, 7=array, 8=regex
+  " Value types (ty_value-type)
+  CONSTANTS:
+    c_type_undefined TYPE i VALUE 0,
+    c_type_number    TYPE i VALUE 1,
+    c_type_string    TYPE i VALUE 2,
+    c_type_bool      TYPE i VALUE 3,
+    c_type_function  TYPE i VALUE 4,
+    c_type_null      TYPE i VALUE 5,
+    c_type_object    TYPE i VALUE 6,
+    c_type_array     TYPE i VALUE 7,
+    c_type_regex     TYPE i VALUE 8,
+    " getter wrapper: fn is invoked on property access (Object.defineProperty get)
+    c_type_getter    TYPE i VALUE 10.
+
   TYPES:
     BEGIN OF ty_value,
       type TYPE i,
