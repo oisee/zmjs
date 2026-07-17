@@ -84,26 +84,6 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD has.
-    IF iv_name = `this`.
-      DATA lo_this_cur TYPE REF TO zcl_mjs_env.
-      lo_this_cur = me.
-      WHILE lo_this_cur IS BOUND.
-        IF lo_this_cur->this_set = abap_true.
-          rv_found = abap_true.
-          RETURN.
-        ENDIF.
-        lo_this_cur = lo_this_cur->parent.
-      ENDWHILE.
-      rv_found = abap_false.
-      RETURN.
-    ENDIF.
-    IF slot_map IS BOUND.
-      READ TABLE slot_map->* WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0.
-        rv_found = abap_true.
-        RETURN.
-      ENDIF.
-    ENDIF.
     READ TABLE vars WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
     IF sy-subrc = 0.
       rv_found = abap_true.
