@@ -19,6 +19,7 @@
     "begin_end_names": true,
     "cds_parser_error": true,
     "check_ddic": true,
+    "whitespace_end": true,
     "check_include": true,
     "check_syntax": true,
     "check_transformation_exists": true,

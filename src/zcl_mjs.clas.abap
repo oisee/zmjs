@@ -86,11 +86,11 @@ CLASS zcl_mjs IMPLEMENTATION.
     ls_null-type = zif_mjs=>c_type_null.
     lo_env->define( iv_name = `null` is_val = ls_null ).
     DATA ls_nan TYPE zif_mjs=>ty_value.
-    ls_nan-type = zif_mjs=>c_type_number. 
+    ls_nan-type = zif_mjs=>c_type_number.
     ls_nan-str = `NaN`.
     lo_env->define( iv_name = `NaN` is_val = ls_nan ).
     DATA ls_inf TYPE zif_mjs=>ty_value.
-    ls_inf-type = zif_mjs=>c_type_number. 
+    ls_inf-type = zif_mjs=>c_type_number.
     ls_inf-str = `Infinity`.
     lo_env->define( iv_name = `Infinity` is_val = ls_inf ).
     " Standard error constructors — defined as undefined placeholders so that
@@ -116,8 +116,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Hoist function declarations at global scope (JS hoisting)
     FIELD-SYMBOLS <hst_g> TYPE zif_mjs=>ty_node.
     LOOP AT lt_stmts INTO DATA(lr_hoist_s).
-      IF lr_hoist_s IS NOT BOUND. 
-        CONTINUE. 
+      IF lr_hoist_s IS NOT BOUND.
+        CONTINUE.
       ENDIF.
       ASSIGN lr_hoist_s->* TO <hst_g>.
       IF sy-subrc = 0 AND <hst_g>-kind = zif_mjs=>c_node_func_decl AND <hst_g>-str IS NOT INITIAL.
@@ -189,8 +189,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         WHILE lv_ri <= lv_nargs.
           DATA ls_rest_arg TYPE zif_mjs=>ty_value.
           READ TABLE it_args INDEX lv_ri INTO ls_rest_arg.
-          IF sy-subrc = 0. 
-            APPEND ls_rest_arg TO lt_rest. 
+          IF sy-subrc = 0.
+            APPEND ls_rest_arg TO lt_rest.
           ENDIF.
           lv_ri = lv_ri + 1.
         ENDWHILE.
@@ -224,8 +224,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Hoist function declarations (JS hoisting: fn decls precede other statements)
     FIELD-SYMBOLS <hst_n> TYPE zif_mjs=>ty_node.
     LOOP AT <fn>-body INTO DATA(lr_hoist).
-      IF lr_hoist IS NOT BOUND. 
-        CONTINUE. 
+      IF lr_hoist IS NOT BOUND.
+        CONTINUE.
       ENDIF.
       ASSIGN lr_hoist->* TO <hst_n>.
       IF sy-subrc = 0 AND <hst_n>-kind = zif_mjs=>c_node_func_decl AND <hst_n>-str IS NOT INITIAL.
@@ -312,8 +312,8 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD collect_slots.
-    IF ir_node IS NOT BOUND. 
-      RETURN. 
+    IF ir_node IS NOT BOUND.
+      RETURN.
     ENDIF.
     FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
     ASSIGN ir_node->* TO <n>.
@@ -402,8 +402,8 @@ CLASS zcl_mjs IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD annotate_slots.
-    IF ir_node IS NOT BOUND. 
-      RETURN. 
+    IF ir_node IS NOT BOUND.
+      RETURN.
     ENDIF.
     FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
     ASSIGN ir_node->* TO <n>.
@@ -546,12 +546,12 @@ CLASS zcl_mjs IMPLEMENTATION.
         DATA(ls_uval) = eval_node( ir_node = <n>-left io_env = io_env ).
         CASE <n>-op.
           WHEN `-`.
-            rs_val-type = zif_mjs=>c_type_number. 
+            rs_val-type = zif_mjs=>c_type_number.
             rs_val-num = 0 - zcl_mjs_val=>to_number( ls_uval ).
           WHEN `!`.
             rs_val-type = zif_mjs=>c_type_bool.
-            IF zcl_mjs_val=>is_true( ls_uval ) = abap_false. 
-              rs_val-num = 1. 
+            IF zcl_mjs_val=>is_true( ls_uval ) = abap_false.
+              rs_val-num = 1.
             ENDIF.
           WHEN `void`.
             " evaluate operand for side effects, return undefined
@@ -613,8 +613,8 @@ CLASS zcl_mjs IMPLEMENTATION.
 
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_asgn>).
-          IF sy-subrc = 0. 
-            <sv_asgn> = ls_aval. 
+          IF sy-subrc = 0.
+            <sv_asgn> = ls_aval.
           ENDIF.
         ELSE.
           io_env->set( iv_name = <n>-str is_val = ls_aval ).
@@ -651,8 +651,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_var>).
-          IF sy-subrc = 0. 
-            <sv_var> = ls_vval. 
+          IF sy-subrc = 0.
+            <sv_var> = ls_vval.
           ENDIF.
         ELSE.
           io_env->define( iv_name = <n>-str is_val = ls_vval ).
@@ -1133,8 +1133,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
           IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
             READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_fn>).
-            IF sy-subrc = 0. 
-              <sv_fn> = ls_fnval. 
+            IF sy-subrc = 0.
+              <sv_fn> = ls_fnval.
             ENDIF.
           ELSE.
             io_env->define( iv_name = <n>-str is_val = ls_fnval ).
@@ -1704,16 +1704,16 @@ CLASS zcl_mjs IMPLEMENTATION.
       lv_fp_b = is_right-num.
       CASE iv_op.
         WHEN `+`.
-          rs_val-type = zif_mjs=>c_type_number. 
-          rs_val-num = lv_fp_a + lv_fp_b. 
+          rs_val-type = zif_mjs=>c_type_number.
+          rs_val-num = lv_fp_a + lv_fp_b.
           RETURN.
         WHEN `-`.
-          rs_val-type = zif_mjs=>c_type_number. 
-          rs_val-num = lv_fp_a - lv_fp_b. 
+          rs_val-type = zif_mjs=>c_type_number.
+          rs_val-num = lv_fp_a - lv_fp_b.
           RETURN.
         WHEN `*`.
-          rs_val-type = zif_mjs=>c_type_number. 
-          rs_val-num = lv_fp_a * lv_fp_b. 
+          rs_val-type = zif_mjs=>c_type_number.
+          rs_val-num = lv_fp_a * lv_fp_b.
           RETURN.
         WHEN `/`.
           rs_val-type = zif_mjs=>c_type_number.
@@ -1740,28 +1740,28 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           RETURN.
         WHEN `<`.
-          rs_val-type = zif_mjs=>c_type_bool. 
-          IF lv_fp_a < lv_fp_b.  
-            rs_val-num = 1. 
-          ENDIF. 
+          rs_val-type = zif_mjs=>c_type_bool.
+          IF lv_fp_a < lv_fp_b.
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
         WHEN `>`.
-          rs_val-type = zif_mjs=>c_type_bool. 
-          IF lv_fp_a > lv_fp_b.  
-            rs_val-num = 1. 
-          ENDIF. 
+          rs_val-type = zif_mjs=>c_type_bool.
+          IF lv_fp_a > lv_fp_b.
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
         WHEN `<=`.
-          rs_val-type = zif_mjs=>c_type_bool. 
-          IF lv_fp_a <= lv_fp_b. 
-            rs_val-num = 1. 
-          ENDIF. 
+          rs_val-type = zif_mjs=>c_type_bool.
+          IF lv_fp_a <= lv_fp_b.
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
         WHEN `>=`.
-          rs_val-type = zif_mjs=>c_type_bool. 
-          IF lv_fp_a >= lv_fp_b. 
-            rs_val-num = 1. 
-          ENDIF. 
+          rs_val-type = zif_mjs=>c_type_bool.
+          IF lv_fp_a >= lv_fp_b.
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
       ENDCASE.
     ENDIF.
@@ -1783,32 +1783,32 @@ CLASS zcl_mjs IMPLEMENTATION.
     CASE iv_op.
       WHEN `===`.
         rs_val-type = zif_mjs=>c_type_bool.
-        IF is_left-type <> is_right-type. 
-          RETURN. 
+        IF is_left-type <> is_right-type.
+          RETURN.
         ENDIF.
         IF is_left-type = zif_mjs=>c_type_string.
-          IF is_left-str = is_right-str. 
-            rs_val-num = 1. 
+          IF is_left-str = is_right-str.
+            rs_val-num = 1.
           ENDIF.
         ELSE.
-          IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ). 
-            rs_val-num = 1. 
+          IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ).
+            rs_val-num = 1.
           ENDIF.
         ENDIF.
         RETURN.
       WHEN `!==`.
         rs_val-type = zif_mjs=>c_type_bool.
-        IF is_left-type <> is_right-type. 
-          rs_val-num = 1. 
-          RETURN. 
+        IF is_left-type <> is_right-type.
+          rs_val-num = 1.
+          RETURN.
         ENDIF.
         IF is_left-type = zif_mjs=>c_type_string.
-          IF is_left-str <> is_right-str. 
-            rs_val-num = 1. 
+          IF is_left-str <> is_right-str.
+            rs_val-num = 1.
           ENDIF.
         ELSE.
-          IF zcl_mjs_val=>to_number( is_left ) <> zcl_mjs_val=>to_number( is_right ). 
-            rs_val-num = 1. 
+          IF zcl_mjs_val=>to_number( is_left ) <> zcl_mjs_val=>to_number( is_right ).
+            rs_val-num = 1.
           ENDIF.
         ENDIF.
         RETURN.
@@ -1816,32 +1816,32 @@ CLASS zcl_mjs IMPLEMENTATION.
         rs_val-type = zif_mjs=>c_type_bool.
         IF is_left-type = is_right-type.
           IF is_left-type = zif_mjs=>c_type_string.
-            IF is_left-str = is_right-str. 
-              rs_val-num = 1. 
+            IF is_left-str = is_right-str.
+              rs_val-num = 1.
             ENDIF.
           ELSE.
-            IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ). 
-              rs_val-num = 1. 
+            IF zcl_mjs_val=>to_number( is_left ) = zcl_mjs_val=>to_number( is_right ).
+              rs_val-num = 1.
             ENDIF.
           ENDIF.
           RETURN.
         ENDIF.
         " null == undefined (and vice versa)
         IF ( is_left-type = zif_mjs=>c_type_undefined OR is_left-type = zif_mjs=>c_type_null ) AND ( is_right-type = zif_mjs=>c_type_undefined OR is_right-type = zif_mjs=>c_type_null ).
-          rs_val-num = 1. 
+          rs_val-num = 1.
           RETURN.
         ENDIF.
         " number/string coercion
         IF is_left-type = zif_mjs=>c_type_number AND is_right-type = zif_mjs=>c_type_string.
-          IF is_left-num = zcl_mjs_val=>to_number( is_right ). 
-            rs_val-num = 1. 
-          ENDIF. 
+          IF is_left-num = zcl_mjs_val=>to_number( is_right ).
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
         ENDIF.
         IF is_left-type = zif_mjs=>c_type_string AND is_right-type = zif_mjs=>c_type_number.
-          IF zcl_mjs_val=>to_number( is_left ) = is_right-num. 
-            rs_val-num = 1. 
-          ENDIF. 
+          IF zcl_mjs_val=>to_number( is_left ) = is_right-num.
+            rs_val-num = 1.
+          ENDIF.
           RETURN.
         ENDIF.
         " bool coercion — convert bool side to number and retry
@@ -1856,10 +1856,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         RETURN.
       WHEN `!=`.
         rs_val = eval_bin_op( iv_op = `==` is_left = is_left is_right = is_right io_env = io_env ).
-        IF rs_val-num = 1. 
-          rs_val-num = 0. 
-        ELSE. 
-          rs_val-num = 1. 
+        IF rs_val-num = 1.
+          rs_val-num = 0.
+        ELSE.
+          rs_val-num = 1.
         ENDIF.
         RETURN.
       WHEN `instanceof`.
@@ -1891,13 +1891,13 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN `+`.
         " addition is already handled with special logic above, but for other operators
         " we need to use the converted values
-        rs_val-type = zif_mjs=>c_type_number. 
+        rs_val-type = zif_mjs=>c_type_number.
         rs_val-num = lv_a + lv_b.
       WHEN `-`.
-        rs_val-type = zif_mjs=>c_type_number. 
+        rs_val-type = zif_mjs=>c_type_number.
         rs_val-num = lv_a - lv_b.
       WHEN `*`.
-        rs_val-type = zif_mjs=>c_type_number. 
+        rs_val-type = zif_mjs=>c_type_number.
         rs_val-num = lv_a * lv_b.
       WHEN `/`.
         rs_val-type = zif_mjs=>c_type_number.
@@ -1922,34 +1922,34 @@ CLASS zcl_mjs IMPLEMENTATION.
           rs_val-str = `NaN`.
         ENDIF.
       WHEN `<`.
-        rs_val-type = zif_mjs=>c_type_bool. 
-        IF lv_a < lv_b.  
-          rs_val-num = 1. 
+        rs_val-type = zif_mjs=>c_type_bool.
+        IF lv_a < lv_b.
+          rs_val-num = 1.
         ENDIF.
       WHEN `>`.
-        rs_val-type = zif_mjs=>c_type_bool. 
-        IF lv_a > lv_b.  
-          rs_val-num = 1. 
+        rs_val-type = zif_mjs=>c_type_bool.
+        IF lv_a > lv_b.
+          rs_val-num = 1.
         ENDIF.
       WHEN `<=`.
-        rs_val-type = zif_mjs=>c_type_bool. 
-        IF lv_a <= lv_b. 
-          rs_val-num = 1. 
+        rs_val-type = zif_mjs=>c_type_bool.
+        IF lv_a <= lv_b.
+          rs_val-num = 1.
         ENDIF.
       WHEN `>=`.
-        rs_val-type = zif_mjs=>c_type_bool. 
-        IF lv_a >= lv_b. 
-          rs_val-num = 1. 
+        rs_val-type = zif_mjs=>c_type_bool.
+        IF lv_a >= lv_b.
+          rs_val-num = 1.
         ENDIF.
       WHEN `&&`.
         rs_val-type = zif_mjs=>c_type_bool.
-        IF zcl_mjs_val=>is_true( is_left ) = abap_true AND zcl_mjs_val=>is_true( is_right ) = abap_true. 
-          rs_val-num = 1. 
+        IF zcl_mjs_val=>is_true( is_left ) = abap_true AND zcl_mjs_val=>is_true( is_right ) = abap_true.
+          rs_val-num = 1.
         ENDIF.
       WHEN `||`.
         rs_val-type = zif_mjs=>c_type_bool.
-        IF zcl_mjs_val=>is_true( is_left ) = abap_true OR zcl_mjs_val=>is_true( is_right ) = abap_true. 
-          rs_val-num = 1. 
+        IF zcl_mjs_val=>is_true( is_left ) = abap_true OR zcl_mjs_val=>is_true( is_right ) = abap_true.
+          rs_val-num = 1.
         ENDIF.
       WHEN OTHERS.
         CLEAR rs_val.
@@ -1970,8 +1970,8 @@ CLASS zcl_mjs IMPLEMENTATION.
   METHOD scan_for_ident.
     " Recursively search for c_node_ident with str=iv_name.
     " Does NOT descend into nested function bodies (separate scope).
-    IF ir_node IS NOT BOUND. 
-      RETURN. 
+    IF ir_node IS NOT BOUND.
+      RETURN.
     ENDIF.
     FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
     ASSIGN ir_node->* TO <n>.
@@ -1984,63 +1984,63 @@ CLASS zcl_mjs IMPLEMENTATION.
         " Do NOT descend into nested function body (separate 'arguments' scope)
 
       WHEN OTHERS.
-        IF scan_for_ident( ir_node = <n>-left      iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-left      iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-right     iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-right     iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-cond      iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-cond      iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-init      iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-init      iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-update    iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-update    iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-object    iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-object    iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
-        IF scan_for_ident( ir_node = <n>-prop_expr iv_name = iv_name ) = abap_true. 
-          rv_found = abap_true. 
-          RETURN. 
+        IF scan_for_ident( ir_node = <n>-prop_expr iv_name = iv_name ) = abap_true.
+          rv_found = abap_true.
+          RETURN.
         ENDIF.
         LOOP AT <n>-body INTO DATA(lr_b).
-          IF scan_for_ident( ir_node = lr_b iv_name = iv_name ) = abap_true. 
-            rv_found = abap_true. 
-            RETURN. 
+          IF scan_for_ident( ir_node = lr_b iv_name = iv_name ) = abap_true.
+            rv_found = abap_true.
+            RETURN.
           ENDIF.
         ENDLOOP.
         LOOP AT <n>-els INTO DATA(lr_e).
-          IF scan_for_ident( ir_node = lr_e iv_name = iv_name ) = abap_true. 
-            rv_found = abap_true. 
-            RETURN. 
+          IF scan_for_ident( ir_node = lr_e iv_name = iv_name ) = abap_true.
+            rv_found = abap_true.
+            RETURN.
           ENDIF.
         ENDLOOP.
         LOOP AT <n>-args INTO DATA(lr_a).
-          IF scan_for_ident( ir_node = lr_a iv_name = iv_name ) = abap_true. 
-            rv_found = abap_true. 
-            RETURN. 
+          IF scan_for_ident( ir_node = lr_a iv_name = iv_name ) = abap_true.
+            rv_found = abap_true.
+            RETURN.
           ENDIF.
         ENDLOOP.
         LOOP AT <n>-cases INTO DATA(ls_sc).
           IF ls_sc-expr IS BOUND.
-            IF scan_for_ident( ir_node = ls_sc-expr iv_name = iv_name ) = abap_true. 
-              rv_found = abap_true. 
-              RETURN. 
+            IF scan_for_ident( ir_node = ls_sc-expr iv_name = iv_name ) = abap_true.
+              rv_found = abap_true.
+              RETURN.
             ENDIF.
           ENDIF.
           LOOP AT ls_sc-body INTO DATA(lr_cb).
-            IF scan_for_ident( ir_node = lr_cb iv_name = iv_name ) = abap_true. 
-              rv_found = abap_true. 
-              RETURN. 
+            IF scan_for_ident( ir_node = lr_cb iv_name = iv_name ) = abap_true.
+              rv_found = abap_true.
+              RETURN.
             ENDIF.
           ENDLOOP.
         ENDLOOP.

@@ -86,15 +86,15 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   METHOD has.
     IF slot_map IS BOUND.
       READ TABLE slot_map->* WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
-      IF sy-subrc = 0. 
-        rv_found = abap_true. 
-        RETURN. 
+      IF sy-subrc = 0.
+        rv_found = abap_true.
+        RETURN.
       ENDIF.
     ENDIF.
     READ TABLE vars WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
-    IF sy-subrc = 0. 
-      rv_found = abap_true. 
-      RETURN. 
+    IF sy-subrc = 0.
+      rv_found = abap_true.
+      RETURN.
     ENDIF.
     IF parent IS BOUND.
       rv_found = parent->has( iv_name ).
