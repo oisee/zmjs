@@ -84,6 +84,13 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD has.
+    IF slot_map IS BOUND.
+      READ TABLE slot_map->* WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
+      IF sy-subrc = 0.
+        rv_found = abap_true.
+        RETURN.
+      ENDIF.
+    ENDIF.
     READ TABLE vars WITH TABLE KEY name = iv_name TRANSPORTING NO FIELDS.
     IF sy-subrc = 0.
       rv_found = abap_true.
