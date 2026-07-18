@@ -47,10 +47,13 @@ INTERFACE zif_mjs PUBLIC.
   " Class method
   TYPES:
     BEGIN OF ty_class_method,
-      name    TYPE string,
-      params  TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
-      body    TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      is_ctor TYPE abap_bool,
+      name        TYPE string,
+      params      TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
+      body        TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      is_ctor     TYPE abap_bool,
+      body_lazy   TYPE abap_bool,
+      body_pos    TYPE i,
+      body_tokens TYPE REF TO tt_tokens,
     END OF ty_class_method,
     tt_class_methods TYPE STANDARD TABLE OF ty_class_method WITH DEFAULT KEY.
 
@@ -124,6 +127,11 @@ INTERFACE zif_mjs PUBLIC.
       prop_expr TYPE REF TO data,
       cases     TYPE tt_switch_cases,
       methods   TYPE tt_class_methods,
+      " Deferred function/arrow body. body_pos is the zero-based token index
+      " of its opening brace in body_tokens.
+      body_lazy   TYPE abap_bool,
+      body_pos    TYPE i,
+      body_tokens TYPE REF TO tt_tokens,
       " Slot optimization: pre-assigned local variable index (1-based)
       slot      TYPE i,         " 0 = not assigned
       slot_ok   TYPE abap_bool, " X = use slot, ' ' = use name-based lookup
@@ -136,6 +144,9 @@ INTERFACE zif_mjs PUBLIC.
       params          TYPE STANDARD TABLE OF string WITH DEFAULT KEY,
       default_params  TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
       body            TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      body_lazy       TYPE abap_bool,
+      body_pos        TYPE i,
+      body_tokens     TYPE REF TO tt_tokens,
       closure         TYPE REF TO object,
       " Slot optimization: populated once on first call (lazy compile)
       compiled        TYPE abap_bool,          " X = slots already assigned

@@ -149,6 +149,8 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       RAISING zcx_mjs_runtime.
     CLASS-METHODS compile_function
       IMPORTING ir_fn         TYPE REF TO data.
+    CLASS-METHODS materialize_function
+      IMPORTING ir_fn         TYPE REF TO data.
     CLASS-METHODS collect_slots
       IMPORTING ir_node       TYPE REF TO data
       CHANGING  ct_map        TYPE zif_mjs=>tt_slot_map
@@ -169,12 +171,13 @@ ENDCLASS.
 CLASS zcl_mjs IMPLEMENTATION.
 
   METHOD eval.
-    DATA lt_tokens TYPE zif_mjs=>tt_tokens.
-    lt_tokens = zcl_mjs_tokenizer=>tokenize( iv_source ).
+    DATA lr_tokens TYPE REF TO zif_mjs=>tt_tokens.
+    CREATE DATA lr_tokens.
+    lr_tokens->* = zcl_mjs_tokenizer=>tokenize( iv_source ).
 
     DATA lo_parser TYPE REF TO zcl_mjs_parser.
     CREATE OBJECT lo_parser
-      EXPORTING it_tokens = lt_tokens.
+      EXPORTING ir_tokens = lr_tokens.
 
     DATA lt_stmts TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
     lt_stmts = lo_parser->parse_program( ).
@@ -241,6 +244,10 @@ CLASS zcl_mjs IMPLEMENTATION.
     FIELD-SYMBOLS <this> TYPE zif_mjs=>ty_value.
 
     ASSIGN ir_fn->* TO <fn>.
+
+    IF <fn>-body_lazy = abap_true.
+      materialize_function( ir_fn ).
+    ENDIF.
 
     " Lazy compile: assign variable slots on first call
     IF <fn>-compiled = abap_false.
@@ -351,6 +358,28 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
       ENDIF.
     ENDIF.
+  ENDMETHOD.
+
+  METHOD materialize_function.
+    FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    ASSIGN ir_fn->* TO <fn>.
+    IF sy-subrc <> 0 OR <fn>-body_lazy = abap_false.
+      RETURN.
+    ENDIF.
+
+    IF <fn>-body_tokens IS NOT BOUND.
+      <fn>-body_lazy = abap_false.
+      RETURN.
+    ENDIF.
+
+    DATA lo_parser TYPE REF TO zcl_mjs_parser.
+    CREATE OBJECT lo_parser
+      EXPORTING ir_tokens = <fn>-body_tokens.
+    lo_parser->pos = <fn>-body_pos.
+    <fn>-body = lo_parser->parse_block( ).
+    <fn>-body_lazy = abap_false.
+    CLEAR <fn>-body_pos.
+    CLEAR <fn>-body_tokens.
   ENDMETHOD.
 
   METHOD compile_function.
@@ -1324,6 +1353,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     <fn_data>-params         = <n>-params.
     <fn_data>-default_params = <n>-default_params.
     <fn_data>-body           = <n>-body.
+    <fn_data>-body_lazy      = <n>-body_lazy.
+    <fn_data>-body_pos       = <n>-body_pos.
+    <fn_data>-body_tokens    = <n>-body_tokens.
     <fn_data>-closure = io_env.
     DATA ls_fnval TYPE zif_mjs=>ty_value.
     ls_fnval-type = zif_mjs=>c_type_function.
@@ -1666,6 +1698,9 @@ CLASS zcl_mjs IMPLEMENTATION.
       <mfn>-name    = ls_cm-name.
       <mfn>-params  = ls_cm-params.
       <mfn>-body    = ls_cm-body.
+      <mfn>-body_lazy = ls_cm-body_lazy.
+      <mfn>-body_pos = ls_cm-body_pos.
+      <mfn>-body_tokens = ls_cm-body_tokens.
       <mfn>-closure = lo_cls_env.
       DATA ls_mfnval TYPE zif_mjs=>ty_value.
       ls_mfnval-type = zif_mjs=>c_type_function.
