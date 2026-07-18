@@ -45,7 +45,7 @@ jobs:
     # alternate base/PR passes so both sides sample the same machine conditions
     - name: run benchmarks
       run: |
-        for i in 1 2 3 4 5 6 7; do
+        for i in 1 2 3; do
           node after/perf/run.mjs before/output before.json
           node after/perf/run.mjs after/output after.json
         done

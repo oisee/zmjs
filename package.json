@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test262": "abaplint && abap_transpile && node test262/run.mjs",
+    "perf": "abaplint && abap_transpile && node perf/run.mjs output",
     "test": "abaplint && abap_transpile && node output/index.mjs"
   },
   "repository": {
