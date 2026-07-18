@@ -46,7 +46,7 @@ lines.push("|---|---:|---:|---:|");
 
 for (const [name, a] of after) {
   const b = before.get(name);
-  const col = agg => agg === undefined ? "n/a" : agg.error !== undefined ? "ERROR" : `${agg.median}ms`;
+  const col = agg => agg === undefined ? "n/a" : agg.error !== undefined ? "ERROR" : `${Math.round(agg.median)}ms`;
   let changeCol = "";
   if (b !== undefined && b.error === undefined && a.error === undefined) {
     const delta = ((a.median - b.median) / b.median) * 100;
