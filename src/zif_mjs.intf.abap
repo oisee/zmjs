@@ -129,6 +129,19 @@ INTERFACE zif_mjs PUBLIC.
       slot_ok   TYPE abap_bool, " X = use slot, ' ' = use name-based lookup
     END OF ty_node.
 
+  " Flat bytecode instruction. text carries a name/operator, node is used only
+  " by the compatibility fallback for syntax not yet lowered to bytecode.
+  TYPES:
+    BEGIN OF ty_bc_instr,
+      opcode TYPE i,
+      arg    TYPE i,
+      target TYPE i,
+      text   TYPE string,
+      num    TYPE f,
+      node   TYPE REF TO data,
+    END OF ty_bc_instr,
+    tt_bc_code TYPE STANDARD TABLE OF ty_bc_instr WITH EMPTY KEY.
+
   " Function (closure is REF TO object to break circular dep with zcl_mjs_env)
   TYPES:
     BEGIN OF ty_function,
@@ -142,6 +155,7 @@ INTERFACE zif_mjs PUBLIC.
       max_slots       TYPE i,                  " number of slot entries needed
       slot_map        TYPE REF TO tt_slot_map, " shared ref — allocated once, reused across calls
       needs_arguments TYPE abap_bool,          " X = function references 'arguments' pseudo-array
+      bc_code         TYPE REF TO tt_bc_code,  " lazily compiled flat instruction stream
     END OF ty_function.
 
 ENDINTERFACE.

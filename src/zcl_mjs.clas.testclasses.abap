@@ -108,6 +108,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_replace_regex_anchor FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex_g FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_bytecode_cache FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -1595,6 +1596,19 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( lv_js ) )
       exp = |12 undefined| ).
+  ENDMETHOD.
+
+  METHOD test_bytecode_cache.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let sum = 0;` && lv_nl &&
+      `for (let i = 0; i < 10; i++) { sum = sum + i; }` && lv_nl &&
+      `function twice(n) { return n + n; }` && lv_nl &&
+      `console.log(twice(sum));`.
+    DATA(lv_first) = trim( zcl_mjs=>eval( lv_js ) ).
+    DATA(lv_cached) = trim( zcl_mjs=>eval( lv_js ) ).
+    cl_abap_unit_assert=>assert_equals( act = lv_first exp = |90| ).
+    cl_abap_unit_assert=>assert_equals( act = lv_cached exp = |90| ).
   ENDMETHOD.
 
 ENDCLASS.
