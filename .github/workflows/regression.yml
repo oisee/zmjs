@@ -1,0 +1,74 @@
+name: regression
+
+# Performance regression test: runs perf/benchmarks/ through the transpiled
+# interpreter built from the PR branch and from the base branch, then posts
+# a before/after comparison as a PR comment.
+# Inspired by https://github.com/abaplint/abaplint/blob/main/.github/workflows/regression.yml
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: regression-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        path: after
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.base.sha }}
+        path: before
+    - uses: actions/setup-node@v6
+
+    - name: build PR branch
+      working-directory: after
+      run: |
+        npm ci
+        npx abap_transpile
+
+    - name: build base branch
+      working-directory: before
+      run: |
+        npm ci
+        npx abap_transpile
+
+    # alternate base/PR passes so both sides sample the same machine conditions
+    - name: run benchmarks
+      run: |
+        for i in 1 2 3 4 5 6 7; do
+          node after/perf/run.mjs before/output before.json
+          node after/perf/run.mjs after/output after.json
+        done
+
+    - name: compare
+      run: |
+        node after/perf/compare.mjs before.json after.json | tee comment-body.md
+        cat comment-body.md >> "$GITHUB_STEP_SUMMARY"
+
+    - name: find existing comment
+      if: github.event.pull_request.head.repo.full_name == github.repository
+      uses: peter-evans/find-comment@v3
+      id: fc
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: Performance regression results
+
+    - name: create or update comment
+      if: github.event.pull_request.head.repo.full_name == github.repository
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        comment-id: ${{ steps.fc.outputs.comment-id }}
+        issue-number: ${{ github.event.pull_request.number }}
+        body-path: comment-body.md
+        edit-mode: replace
