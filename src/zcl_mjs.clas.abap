@@ -601,10 +601,14 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot INTO rs_val.
         ELSE.
-          IF io_env->has( <n>-str ) = abap_false.
+          DATA lv_ident_found TYPE abap_bool.
+          io_env->resolve(
+            EXPORTING iv_name  = <n>-str
+            IMPORTING ev_found = lv_ident_found
+                      es_val   = rs_val ).
+          IF lv_ident_found = abap_false.
             raise_ref_error( <n>-str ).
           ENDIF.
-          rs_val = io_env->get( <n>-str ).
         ENDIF.
 
       WHEN zif_mjs=>c_node_binop.
