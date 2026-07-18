@@ -13,7 +13,7 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_len TYPE i.
     DATA lv_ch  TYPE c LENGTH 1.
     DATA lv_j   TYPE i.
-    DATA ls_tok TYPE zif_mjs=>ty_token.
+    FIELD-SYMBOLS <tok> TYPE zif_mjs=>ty_token.
     DATA lv_ni  TYPE i.
     DATA lv_bt  TYPE c LENGTH 1.
     DATA lv_d    TYPE c LENGTH 1.
@@ -28,6 +28,8 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_hk     TYPE i.
     DATA lv_quote TYPE c LENGTH 1.
     DATA lv_sbuf TYPE string.
+    DATA lv_chunk_start TYPE i.
+    DATA lv_chunk_len   TYPE i.
     DATA lv_esc TYPE c LENGTH 1.
     DATA lv_esc_cp   TYPE i.
     DATA lv_esc_xb   TYPE x LENGTH 1.
@@ -128,10 +130,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
               lv_hexval = lv_hexval * 16 + lv_hpos.
             ENDDO.
-            CLEAR ls_tok.
-            ls_tok-kind = 0.
-            ls_tok-val  = |{ lv_hexval }|.
-            APPEND ls_tok TO rt_tokens.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 0.
+            <tok>-val  = |{ lv_hexval }|.
             lv_i = lv_j.
             CONTINUE.
           ELSEIF lv_nhc = `b` OR lv_nhc = `B`.
@@ -153,10 +154,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
               lv_hexval = lv_hexval * 2 + lv_hpos.
             ENDDO.
-            CLEAR ls_tok.
-            ls_tok-kind = 0.
-            ls_tok-val  = |{ lv_hexval }|.
-            APPEND ls_tok TO rt_tokens.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 0.
+            <tok>-val  = |{ lv_hexval }|.
             lv_i = lv_j.
             CONTINUE.
           ELSEIF lv_nhc = `o` OR lv_nhc = `O`.
@@ -178,10 +178,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
               lv_hexval = lv_hexval * 8 + lv_hpos.
             ENDDO.
-            CLEAR ls_tok.
-            ls_tok-kind = 0.
-            ls_tok-val  = |{ lv_hexval }|.
-            APPEND ls_tok TO rt_tokens.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 0.
+            <tok>-val  = |{ lv_hexval }|.
             lv_i = lv_j.
             CONTINUE.
           ELSEIF lv_nhc >= `0` AND lv_nhc <= `7`.
@@ -209,10 +208,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
                 lv_hexval = lv_hexval * 8 + lv_hpos.
               ENDDO.
-              CLEAR ls_tok.
-              ls_tok-kind = 0.
-              ls_tok-val  = |{ lv_hexval }|.
-              APPEND ls_tok TO rt_tokens.
+              APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+              <tok>-kind = 0.
+              <tok>-val  = |{ lv_hexval }|.
               lv_i = lv_j.
               CONTINUE.
             ENDIF.
@@ -250,10 +248,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
           ENDIF.
         ENDIF.
         lv_numlen = lv_j - lv_i.
-        CLEAR ls_tok.
-        ls_tok-kind = 0.
-        ls_tok-val  = iv_src+lv_i(lv_numlen).
-        APPEND ls_tok TO rt_tokens.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 0.
+        <tok>-val  = iv_src+lv_i(lv_numlen).
         lv_i = lv_j.
         CONTINUE.
       ENDIF.
@@ -262,13 +259,22 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
       IF lv_ch = `'` OR lv_ch = `"` OR lv_ch = lv_bt.
         lv_quote = lv_ch.
         lv_j = lv_i + 1.
+        lv_chunk_start = lv_j.
         CLEAR lv_sbuf.
         WHILE lv_j < lv_len.
           lv_sc = iv_src+lv_j(1).
           IF lv_sc = lv_quote.
+            lv_chunk_len = lv_j - lv_chunk_start.
+            IF lv_chunk_len > 0.
+              lv_sbuf = lv_sbuf && iv_src+lv_chunk_start(lv_chunk_len).
+            ENDIF.
             EXIT.
           ENDIF.
           IF lv_sc = `\` AND lv_j + 1 < lv_len.
+            lv_chunk_len = lv_j - lv_chunk_start.
+            IF lv_chunk_len > 0.
+              lv_sbuf = lv_sbuf && iv_src+lv_chunk_start(lv_chunk_len).
+            ENDIF.
             lv_j = lv_j + 1.
             lv_esc = iv_src+lv_j(1).
             CASE lv_esc.
@@ -383,17 +389,22 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               WHEN lv_linterm_ps.                     " \<U+2029> line continuation
                 " skip – produce nothing
               WHEN OTHERS.
-                lv_sbuf = lv_sbuf && substring( val = iv_src off = lv_j len = 1 ).
+                lv_sbuf = lv_sbuf && lv_esc.
             ENDCASE.
-          ELSE.
-            lv_sbuf = lv_sbuf && substring( val = iv_src off = lv_j len = 1 ).
+            lv_chunk_start = lv_j + 1.
           ENDIF.
           lv_j = lv_j + 1.
         ENDWHILE.
-        CLEAR ls_tok.
-        ls_tok-kind = 1.
-        ls_tok-val  = lv_sbuf.
-        APPEND ls_tok TO rt_tokens.
+        " Unterminated strings still retain the final unchanged source span.
+        IF lv_j >= lv_len.
+          lv_chunk_len = lv_j - lv_chunk_start.
+          IF lv_chunk_len > 0.
+            lv_sbuf = lv_sbuf && iv_src+lv_chunk_start(lv_chunk_len).
+          ENDIF.
+        ENDIF.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 1.
+        <tok>-val  = lv_sbuf.
         lv_i = lv_j + 1.
         CONTINUE.
       ENDIF.
@@ -413,13 +424,12 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
           ENDIF.
         ENDWHILE.
         lv_idlen = lv_j - lv_i.
-        CLEAR ls_tok.
-        ls_tok-kind = 2.
-        ls_tok-val  = iv_src+lv_i(lv_idlen).
-        IF ls_tok-val = `instanceof`.
-          ls_tok-kind = 3.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 2.
+        <tok>-val  = iv_src+lv_i(lv_idlen).
+        IF <tok>-val = `instanceof`.
+          <tok>-kind = 3.
         ENDIF.
-        APPEND ls_tok TO rt_tokens.
         lv_i = lv_j.
         CONTINUE.
       ENDIF.
@@ -428,10 +438,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
       IF lv_i + 1 < lv_len.
         lv_two = iv_src+lv_i(2).
         IF lv_two = `?.` OR lv_two = `??`.
-          CLEAR ls_tok.
-          ls_tok-kind = 3.
-          ls_tok-val  = lv_two.
-          APPEND ls_tok TO rt_tokens.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          <tok>-val  = lv_two.
           lv_i = lv_i + 2.
           CONTINUE.
         ENDIF.
@@ -443,27 +452,24 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
              ( lv_two = `==` OR lv_two = `!=` ).
             lv_three = iv_src+lv_i(3).
             IF lv_three = `===` OR lv_three = `!==`.
-              CLEAR ls_tok.
-              ls_tok-kind = 3.
-              ls_tok-val  = lv_three.
-              APPEND ls_tok TO rt_tokens.
+              APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+              <tok>-kind = 3.
+              <tok>-val  = lv_three.
               lv_i = lv_i + 3.
               CONTINUE.
             ENDIF.
           ENDIF.
-          CLEAR ls_tok.
-          ls_tok-kind = 3.
-          ls_tok-val  = lv_two.
-          APPEND ls_tok TO rt_tokens.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          <tok>-val  = lv_two.
           lv_i = lv_i + 2.
           CONTINUE.
         ENDIF.
       ENDIF.
       IF lv_ch = `.` AND lv_i + 2 < lv_len AND iv_src+lv_i(3) = `...`.
-        CLEAR ls_tok.
-        ls_tok-kind = 3.
-        ls_tok-val  = `...`.
-        APPEND ls_tok TO rt_tokens.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 3.
+        <tok>-val  = `...`.
         lv_i = lv_i + 3.
         CONTINUE.
       ENDIF.
@@ -503,10 +509,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             ENDIF.
           ENDIF.
           lv_numlen = lv_j - lv_i.
-          CLEAR ls_tok.
-          ls_tok-kind = 0.
-          ls_tok-val  = iv_src+lv_i(lv_numlen).
-          APPEND ls_tok TO rt_tokens.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 0.
+          <tok>-val  = iv_src+lv_i(lv_numlen).
           lv_i = lv_j.
           CONTINUE.
         ENDIF.
@@ -577,10 +582,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            CLEAR ls_tok.
-            ls_tok-kind = 6.
-            ls_tok-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
-            APPEND ls_tok TO rt_tokens.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 6.
+            <tok>-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
             lv_i = lv_j.
             CONTINUE.
           ENDIF.
@@ -594,10 +598,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
          OR lv_ch = `{` OR lv_ch = `}` OR lv_ch = `;` OR lv_ch = `:`
          OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`
          OR lv_ch = `?`.
-        CLEAR ls_tok.
-        ls_tok-kind = 3.
-        ls_tok-val  = lv_ch.
-        APPEND ls_tok TO rt_tokens.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 3.
+        <tok>-val  = lv_ch.
         lv_i = lv_i + 1.
         CONTINUE.
       ENDIF.
@@ -605,10 +608,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
       lv_i = lv_i + 1.
     ENDWHILE.
 
-    CLEAR ls_tok.
-    ls_tok-kind = 5.
-    ls_tok-val  = ``.
-    APPEND ls_tok TO rt_tokens.
+    APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+    <tok>-kind = 5.
+    <tok>-val  = ``.
   ENDMETHOD.
 
 ENDCLASS.
