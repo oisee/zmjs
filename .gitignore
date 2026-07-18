@@ -11,3 +11,7 @@ output
 #                      current score: PASS=230 FAIL=36 TOTAL=266
 #   (add your own .js files here freely)
 _tmp/
+
+# perf regression result files (perf/run.mjs)
+before.json
+after.json
