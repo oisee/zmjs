@@ -25,6 +25,11 @@ CLASS zcl_mjs_env DEFINITION PUBLIC.
     METHODS get
       IMPORTING iv_name       TYPE string
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
+    " Resolve a variable in one scope-chain walk, returning existence and value
+    METHODS resolve
+      IMPORTING iv_name  TYPE string
+      EXPORTING ev_found TYPE abap_bool
+                es_val   TYPE zif_mjs=>ty_value.
     METHODS set
       IMPORTING iv_name TYPE string
                 is_val  TYPE zif_mjs=>ty_value.
@@ -81,6 +86,40 @@ CLASS zcl_mjs_env IMPLEMENTATION.
       RETURN.
     ENDIF.
     rs_val-type = zif_mjs=>c_type_undefined. " undefined
+  ENDMETHOD.
+
+  METHOD resolve.
+    DATA lo_cur TYPE REF TO zcl_mjs_env.
+    lo_cur = me.
+    ev_found = abap_false.
+    CLEAR es_val.
+
+    WHILE lo_cur IS BOUND.
+      IF lo_cur->slot_map IS BOUND.
+        READ TABLE lo_cur->slot_map->* WITH TABLE KEY name = iv_name
+          ASSIGNING FIELD-SYMBOL(<sm>).
+        IF sy-subrc = 0.
+          READ TABLE lo_cur->slots INDEX <sm>-slot INTO es_val.
+          IF sy-subrc <> 0.
+            es_val-type = zif_mjs=>c_type_undefined.
+          ENDIF.
+          ev_found = abap_true.
+          RETURN.
+        ENDIF.
+      ENDIF.
+
+      READ TABLE lo_cur->vars WITH TABLE KEY name = iv_name
+        ASSIGNING FIELD-SYMBOL(<v>).
+      IF sy-subrc = 0.
+        es_val = <v>-val.
+        ev_found = abap_true.
+        RETURN.
+      ENDIF.
+
+      lo_cur = lo_cur->parent.
+    ENDWHILE.
+
+    es_val-type = zif_mjs=>c_type_undefined.
   ENDMETHOD.
 
   METHOD has.
