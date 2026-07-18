@@ -109,8 +109,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
       READ TABLE slot_map->* WITH TABLE KEY name = iv_name
         ASSIGNING FIELD-SYMBOL(<sm>).
       IF sy-subrc = 0.
-        READ TABLE slots INDEX <sm>-slot ASSIGNING FIELD-SYMBOL(<sv>).
-        <sv> = is_val.
+        set_slot( iv_slot = <sm>-slot is_val = is_val ).
         RETURN.
       ENDIF.
     ENDIF.
@@ -122,8 +121,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
         READ TABLE lo_cur->slot_map->* WITH TABLE KEY name = iv_name
           ASSIGNING FIELD-SYMBOL(<sm2>).
         IF sy-subrc = 0.
-          READ TABLE lo_cur->slots INDEX <sm2>-slot ASSIGNING FIELD-SYMBOL(<sv2>).
-          <sv2> = is_val.
+          lo_cur->set_slot( iv_slot = <sm2>-slot is_val = is_val ).
           RETURN.
         ENDIF.
       ENDIF.
@@ -148,8 +146,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
       READ TABLE slot_map->* WITH TABLE KEY name = iv_name
         ASSIGNING FIELD-SYMBOL(<sm>).
       IF sy-subrc = 0.
-        READ TABLE slots INDEX <sm>-slot ASSIGNING FIELD-SYMBOL(<sv>).
-        <sv> = is_val.
+        set_slot( iv_slot = <sm>-slot is_val = is_val ).
         RETURN.
       ENDIF.
       " Not a slot (e.g. 'this', 'arguments') — fall through to vars
@@ -170,10 +167,16 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD set_slot.
-    READ TABLE slots INDEX iv_slot ASSIGNING FIELD-SYMBOL(<sv>).
-    IF sy-subrc = 0.
-      <sv> = is_val.
+    " slots are not pre-populated: grow to the written index on demand
+    " (a missing index reads as undefined, matching JS semantics)
+    IF iv_slot > lines( slots ).
+      DATA ls_undef TYPE zif_mjs=>ty_value.
+      DO iv_slot - lines( slots ) TIMES.
+        APPEND ls_undef TO slots.
+      ENDDO.
     ENDIF.
+    READ TABLE slots INDEX iv_slot ASSIGNING FIELD-SYMBOL(<sv>).
+    <sv> = is_val.
   ENDMETHOD.
 
   METHOD append_output.

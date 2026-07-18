@@ -261,11 +261,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Share slot_map reference (no copy - all calls use the same hash table)
     lo_call_env->slot_map = <fn>-slot_map.
 
-    " Pre-populate slots table with 'undefined' entries (index-based, O(1) access)
-    DATA ls_undef TYPE zif_mjs=>ty_value.  " initial = undefined
-    DO <fn>-max_slots TIMES.
-      APPEND ls_undef TO lo_call_env->slots.
-    ENDDO.
+    " slots grow on first write (set_slot); a missing index reads as undefined
 
     " Bind 'this' in vars (not slots - special name, always slow-path)
     IF ir_this IS BOUND.
@@ -349,7 +345,8 @@ CLASS zcl_mjs IMPLEMENTATION.
       ASSIGN ir_this->* TO <this>.
       IF <this>-type = zif_mjs=>c_type_object.
         DATA(ls_updated) = lo_call_env->get( `this` ).
-        IF ls_updated-type = zif_mjs=>c_type_object.
+        " same reference = body mutated our object directly, nothing to copy
+        IF ls_updated-type = zif_mjs=>c_type_object AND ls_updated-obj <> <this>-obj.
           <this>-obj->copy_from( ls_updated-obj ).
         ENDIF.
       ENDIF.
@@ -821,10 +818,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       DATA(ls_v_new) = eval_bin_op( iv_op = lv_op_inc is_left = ls_v_inc is_right = ls_v_one io_env = io_env ).
 
       IF <ln_inc>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
-        READ TABLE io_env->slots INDEX <ln_inc>-slot ASSIGNING FIELD-SYMBOL(<v_asgn_inc>).
-        IF sy-subrc = 0.
-          <v_asgn_inc> = ls_v_new.
-        ENDIF.
+        io_env->set_slot( iv_slot = <ln_inc>-slot is_val = ls_v_new ).
       ELSE.
         io_env->set( iv_name = <ln_inc>-str is_val = ls_v_new ).
       ENDIF.
@@ -852,10 +846,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
 
     IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
-      READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_asgn>).
-      IF sy-subrc = 0.
-        <sv_asgn> = ls_aval.
-      ENDIF.
+      io_env->set_slot( iv_slot = <n>-slot is_val = ls_aval ).
     ELSE.
       io_env->set( iv_name = <n>-str is_val = ls_aval ).
     ENDIF.
@@ -896,10 +887,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       ls_vval = eval_node( ir_node = <n>-right io_env = io_env ).
     ENDIF.
     IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
-      READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_var>).
-      IF sy-subrc = 0.
-        <sv_var> = ls_vval.
-      ENDIF.
+      io_env->set_slot( iv_slot = <n>-slot is_val = ls_vval ).
     ELSE.
       io_env->define( iv_name = <n>-str is_val = ls_vval ).
     ENDIF.
@@ -1339,10 +1327,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Function expressions (op='E') must NOT register their name in the enclosing scope
     IF <n>-str IS NOT INITIAL AND <n>-op <> 'E'.
       IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
-        READ TABLE io_env->slots INDEX <n>-slot ASSIGNING FIELD-SYMBOL(<sv_fn>).
-        IF sy-subrc = 0.
-          <sv_fn> = ls_fnval.
-        ENDIF.
+        io_env->set_slot( iv_slot = <n>-slot is_val = ls_fnval ).
       ELSE.
         io_env->define( iv_name = <n>-str is_val = ls_fnval ).
       ENDIF.
