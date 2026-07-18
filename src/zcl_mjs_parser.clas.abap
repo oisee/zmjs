@@ -706,8 +706,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
 
   METHOD parse_or.
     DATA(lr_left) = parse_and( ).
-    WHILE peek( )-kind = 3 AND peek( )-val = `||`.
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ls_token-val = `||`.
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_and( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -716,14 +718,17 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_and.
     DATA(lr_left) = parse_equality( ).
-    WHILE peek( )-kind = 3 AND peek( )-val = `&&`.
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ls_token-val = `&&`.
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_equality( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -732,15 +737,18 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_equality.
     DATA(lr_left) = parse_comparison( ).
-    WHILE peek( )-kind = 3 AND ( peek( )-val = `==` OR peek( )-val = `!=`
-       OR peek( )-val = `===` OR peek( )-val = `!==` ).
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ( ls_token-val = `==` OR ls_token-val = `!=`
+       OR ls_token-val = `===` OR ls_token-val = `!==` ).
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_comparison( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -749,15 +757,18 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_comparison.
     DATA(lr_left) = parse_add_sub( ).
-    WHILE peek( )-kind = 3 AND ( peek( )-val = `<` OR peek( )-val = `>`
-       OR peek( )-val = `<=` OR peek( )-val = `>=` OR peek( )-val = `instanceof` ).
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ( ls_token-val = `<` OR ls_token-val = `>`
+       OR ls_token-val = `<=` OR ls_token-val = `>=` OR ls_token-val = `instanceof` ).
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_add_sub( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -766,14 +777,17 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_add_sub.
     DATA(lr_left) = parse_mul_div( ).
-    WHILE peek( )-kind = 3 AND ( peek( )-val = `+` OR peek( )-val = `-` ).
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ( ls_token-val = `+` OR ls_token-val = `-` ).
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_mul_div( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -782,14 +796,17 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_mul_div.
     DATA(lr_left) = parse_unary( ).
-    WHILE peek( )-kind = 3 AND ( peek( )-val = `*` OR peek( )-val = `/` OR peek( )-val = `%` ).
-      DATA(lv_op) = next( )-val.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-kind = 3 AND ( ls_token-val = `*` OR ls_token-val = `/` OR ls_token-val = `%` ).
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_right) = parse_unary( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -798,13 +815,16 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       lr_n->left  = lr_left.
       lr_n->right = lr_right.
       lr_left = lr_n.
+      ls_token = peek( ).
     ENDWHILE.
     rr_node = lr_left.
   ENDMETHOD.
 
   METHOD parse_unary.
-    IF peek( )-kind = 3 AND ( peek( )-val = `++` OR peek( )-val = `--` ).
-      DATA(lv_op_inc) = next( )-val.
+    DATA(ls_token) = peek( ).
+    IF ls_token-kind = 3 AND ( ls_token-val = `++` OR ls_token-val = `--` ).
+      DATA(lv_op_inc) = ls_token-val.
+      next( ).
       DATA(lr_operand_inc) = parse_unary( ).
       DATA lr_n_inc TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n_inc.
@@ -817,8 +837,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_n_inc.
       RETURN.
     ENDIF.
-    IF peek( )-kind = 3 AND ( peek( )-val = `-` OR peek( )-val = `!` ).
-      DATA(lv_op) = next( )-val.
+    IF ls_token-kind = 3 AND ( ls_token-val = `-` OR ls_token-val = `!` ).
+      DATA(lv_op) = ls_token-val.
+      next( ).
       DATA(lr_operand) = parse_unary( ).
       DATA lr_n TYPE REF TO zif_mjs=>ty_node.
       CREATE DATA lr_n.
@@ -828,7 +849,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_n.
       RETURN.
     ENDIF.
-    IF peek( )-val = `typeof` AND peek( )-kind = 2.
+    IF ls_token-val = `typeof` AND ls_token-kind = 2.
       next( ).
       DATA(lr_op2) = parse_unary( ).
       DATA lr_to TYPE REF TO zif_mjs=>ty_node.
@@ -838,7 +859,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_to.
       RETURN.
     ENDIF.
-    IF peek( )-val = `void` AND peek( )-kind = 2.
+    IF ls_token-val = `void` AND ls_token-kind = 2.
       next( ).
       DATA(lr_void_ex) = parse_unary( ).
       DATA lr_void_n TYPE REF TO zif_mjs=>ty_node.
@@ -849,7 +870,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       rr_node = lr_void_n.
       RETURN.
     ENDIF.
-    IF peek( )-val = `new` AND peek( )-kind = 2.
+    IF ls_token-val = `new` AND ls_token-kind = 2.
       next( ).
       DATA(lr_c_expr) = parse_member( ).
       DATA(lv_c_name) = ``.
@@ -859,7 +880,8 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lv_c_name = <c_node>-str.
       ENDIF.
       DATA lt_args TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-      IF peek( )-val = `(`.
+      ls_token = peek( ).
+      IF ls_token-val = `(`.
         next( ).
         lt_args = parse_call_args( ).
       ELSE.
@@ -881,8 +903,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA(lr_left) = parse_primary( ).
     DATA lv_continue TYPE abap_bool.
     lv_continue = abap_true.
+    DATA(ls_token) = peek( ).
     WHILE lv_continue = abap_true.
-      IF peek( )-val = `.`.
+      IF ls_token-val = `.`.
         next( ).
         DATA(lv_prop) = next( )-val.
         DATA lr_ma TYPE REF TO zif_mjs=>ty_node.
@@ -891,7 +914,7 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_ma->object   = lr_left.
         lr_ma->property = lv_prop.
         lr_left = lr_ma.
-      ELSEIF peek( )-val = `[`.
+      ELSEIF ls_token-val = `[`.
         next( ).
         DATA(lr_idx) = parse_expr( ).
         expect( `]` ).
@@ -903,6 +926,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_left = lr_ba.
       ELSE.
         lv_continue = abap_false.
+      ENDIF.
+      IF lv_continue = abap_true.
+        ls_token = peek( ).
       ENDIF.
     ENDWHILE.
     rr_node = lr_left.
@@ -916,126 +942,148 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     DATA(lr_left) = ir_start.
     DATA lv_continue TYPE abap_bool.
     lv_continue = abap_true.
+    DATA(ls_token) = peek( ).
     WHILE lv_continue = abap_true.
-      IF peek( )-val = `.`.
-        next( ).
-        DATA(lv_prop) = next( )-val.
-        IF peek( )-val = `(`.
+      CASE ls_token-val.
+        WHEN `.`.
           next( ).
-          DATA lt_margs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          lt_margs = parse_call_args( ).
-          DATA lr_mc TYPE REF TO zif_mjs=>ty_node.
-          CREATE DATA lr_mc.
-          lr_mc->kind     = zif_mjs=>c_node_method_call.
-          lr_mc->object   = lr_left.
-          lr_mc->property = lv_prop.
-          lr_mc->args     = lt_margs.
-          lr_left = lr_mc.
-        ELSE.
-          DATA lr_ma TYPE REF TO zif_mjs=>ty_node.
-          CREATE DATA lr_ma.
-          lr_ma->kind     = zif_mjs=>c_node_member_access.
-          lr_ma->object   = lr_left.
-          lr_ma->property = lv_prop.
-          lr_left = lr_ma.
-        ENDIF.
-      ELSEIF peek( )-val = `[`.
-        next( ).
-        DATA(lr_idx) = parse_expr( ).
-        expect( `]` ).
-        DATA lr_ba TYPE REF TO zif_mjs=>ty_node.
-        CREATE DATA lr_ba.
-        lr_ba->kind      = zif_mjs=>c_node_member_access.
-        lr_ba->object    = lr_left.
-        lr_ba->prop_expr = lr_idx.
-        lr_left = lr_ba.
-      ELSEIF peek( )-val = `?.` AND peek( iv_offset = 1 )-val = `(`.
-        next( ).
-        next( ).
-        DATA lt_eoargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-        lt_eoargs = parse_call_args( ).
-        DATA lr_eoc TYPE REF TO zif_mjs=>ty_node.
-        CREATE DATA lr_eoc.
-        lr_eoc->kind = zif_mjs=>c_node_call.
-        lr_eoc->op   = `?.`.
-        lr_eoc->left = lr_left.
-        lr_eoc->args = lt_eoargs.
-        lr_left = lr_eoc.
-      ELSEIF peek( )-val = `?.`.
-        next( ).
-        IF peek( )-val = `[`.
-          next( ).
-          DATA(lr_oidx) = parse_expr( ).
-          expect( `]` ).
-          DATA lr_oba TYPE REF TO zif_mjs=>ty_node.
-          CREATE DATA lr_oba.
-          lr_oba->kind      = zif_mjs=>c_node_member_access.
-          lr_oba->op        = `?.`.
-          lr_oba->object    = lr_left.
-          lr_oba->prop_expr = lr_oidx.
-          lr_left = lr_oba.
-        ELSE.
-          DATA(lv_oprop) = next( )-val.
-          IF peek( )-val = `(`.
+          DATA(lv_prop) = next( )-val.
+          DATA(ls_after_property) = peek( ).
+          IF ls_after_property-val = `(`.
             next( ).
-            DATA lt_omargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-            lt_omargs = parse_call_args( ).
-            DATA lr_omc TYPE REF TO zif_mjs=>ty_node.
-            CREATE DATA lr_omc.
-            lr_omc->kind     = zif_mjs=>c_node_method_call.
-            lr_omc->op       = `?.`.
-            lr_omc->object   = lr_left.
-            lr_omc->property = lv_oprop.
-            lr_omc->args     = lt_omargs.
-            lr_left = lr_omc.
+            DATA lt_margs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            lt_margs = parse_call_args( ).
+            DATA lr_mc TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_mc.
+            lr_mc->kind     = zif_mjs=>c_node_method_call.
+            lr_mc->object   = lr_left.
+            lr_mc->property = lv_prop.
+            lr_mc->args     = lt_margs.
+            lr_left = lr_mc.
           ELSE.
-            DATA lr_oma TYPE REF TO zif_mjs=>ty_node.
-            CREATE DATA lr_oma.
-            lr_oma->kind     = zif_mjs=>c_node_member_access.
-            lr_oma->op       = `?.`.
-            lr_oma->object   = lr_left.
-            lr_oma->property = lv_oprop.
-            lr_left = lr_oma.
+            DATA lr_ma TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_ma.
+            lr_ma->kind     = zif_mjs=>c_node_member_access.
+            lr_ma->object   = lr_left.
+            lr_ma->property = lv_prop.
+            lr_left = lr_ma.
           ENDIF.
-        ENDIF.
-      ELSEIF peek( )-val = `(` AND lr_left IS BOUND.
-        FIELD-SYMBOLS <ln> TYPE zif_mjs=>ty_node.
-        ASSIGN lr_left->* TO <ln>.
-        IF <ln>-kind = zif_mjs=>c_node_ident.
+
+        WHEN `[`.
           next( ).
-          DATA lt_fargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          lt_fargs = parse_call_args( ).
-          DATA lr_call TYPE REF TO zif_mjs=>ty_node.
-          CREATE DATA lr_call.
-          lr_call->kind = zif_mjs=>c_node_call.
-          lr_call->str  = <ln>-str.
-          lr_call->args = lt_fargs.
-          lr_left = lr_call.
-        ELSE.
-          " Expression call: callee is any expression (e.g. IIFE)
+          DATA(lr_idx) = parse_expr( ).
+          expect( `]` ).
+          DATA lr_ba TYPE REF TO zif_mjs=>ty_node.
+          CREATE DATA lr_ba.
+          lr_ba->kind      = zif_mjs=>c_node_member_access.
+          lr_ba->object    = lr_left.
+          lr_ba->prop_expr = lr_idx.
+          lr_left = lr_ba.
+
+        WHEN `?.`.
+          DATA(ls_lookahead) = peek( iv_offset = 1 ).
+          IF ls_lookahead-val = `(`.
+            next( ).
+            next( ).
+            DATA lt_eoargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            lt_eoargs = parse_call_args( ).
+            DATA lr_eoc TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_eoc.
+            lr_eoc->kind = zif_mjs=>c_node_call.
+            lr_eoc->op   = `?.`.
+            lr_eoc->left = lr_left.
+            lr_eoc->args = lt_eoargs.
+            lr_left = lr_eoc.
+          ELSE.
+            next( ).
+            DATA(ls_optional_token) = peek( ).
+            IF ls_optional_token-val = `[`.
+              next( ).
+              DATA(lr_oidx) = parse_expr( ).
+              expect( `]` ).
+              DATA lr_oba TYPE REF TO zif_mjs=>ty_node.
+              CREATE DATA lr_oba.
+              lr_oba->kind      = zif_mjs=>c_node_member_access.
+              lr_oba->op        = `?.`.
+              lr_oba->object    = lr_left.
+              lr_oba->prop_expr = lr_oidx.
+              lr_left = lr_oba.
+            ELSE.
+              DATA(lv_oprop) = ls_optional_token-val.
+              next( ).
+              DATA(ls_after_optional_prop) = peek( ).
+              IF ls_after_optional_prop-val = `(`.
+                next( ).
+                DATA lt_omargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+                lt_omargs = parse_call_args( ).
+                DATA lr_omc TYPE REF TO zif_mjs=>ty_node.
+                CREATE DATA lr_omc.
+                lr_omc->kind     = zif_mjs=>c_node_method_call.
+                lr_omc->op       = `?.`.
+                lr_omc->object   = lr_left.
+                lr_omc->property = lv_oprop.
+                lr_omc->args     = lt_omargs.
+                lr_left = lr_omc.
+              ELSE.
+                DATA lr_oma TYPE REF TO zif_mjs=>ty_node.
+                CREATE DATA lr_oma.
+                lr_oma->kind     = zif_mjs=>c_node_member_access.
+                lr_oma->op       = `?.`.
+                lr_oma->object   = lr_left.
+                lr_oma->property = lv_oprop.
+                lr_left = lr_oma.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+
+        WHEN `(`.
+          IF lr_left IS NOT BOUND.
+            lv_continue = abap_false.
+            CONTINUE.
+          ENDIF.
+          FIELD-SYMBOLS <ln> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_left->* TO <ln>.
           next( ).
-          DATA lt_efargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
-          lt_efargs = parse_call_args( ).
-          DATA lr_ecall TYPE REF TO zif_mjs=>ty_node.
-          CREATE DATA lr_ecall.
-          lr_ecall->kind = zif_mjs=>c_node_call.
-          lr_ecall->left = lr_left.
-          lr_ecall->args = lt_efargs.
-          lr_left = lr_ecall.
-        ENDIF.
-      ELSEIF peek( )-kind = 3 AND ( peek( )-val = `++` OR peek( )-val = `--` ).
-        DATA(lv_post_op) = next( )-val.
-        DATA lr_post TYPE REF TO zif_mjs=>ty_node.
-        CREATE DATA lr_post.
-        IF lv_post_op = `++`.
-          lr_post->kind = zif_mjs=>c_node_post_inc.
-        ELSE.
-          lr_post->kind = zif_mjs=>c_node_post_dec.
-        ENDIF.
-        lr_post->left = lr_left.
-        lr_left = lr_post.
-      ELSE.
-        lv_continue = abap_false.
+          IF <ln>-kind = zif_mjs=>c_node_ident.
+            DATA lt_fargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            lt_fargs = parse_call_args( ).
+            DATA lr_call TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_call.
+            lr_call->kind = zif_mjs=>c_node_call.
+            lr_call->str  = <ln>-str.
+            lr_call->args = lt_fargs.
+            lr_left = lr_call.
+          ELSE.
+            " Expression call: callee is any expression (e.g. IIFE)
+            DATA lt_efargs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+            lt_efargs = parse_call_args( ).
+            DATA lr_ecall TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_ecall.
+            lr_ecall->kind = zif_mjs=>c_node_call.
+            lr_ecall->left = lr_left.
+            lr_ecall->args = lt_efargs.
+            lr_left = lr_ecall.
+          ENDIF.
+
+        WHEN OTHERS.
+          IF ls_token-kind = 3 AND ( ls_token-val = `++` OR ls_token-val = `--` ).
+            DATA(lv_post_op) = ls_token-val.
+            next( ).
+            DATA lr_post TYPE REF TO zif_mjs=>ty_node.
+            CREATE DATA lr_post.
+            IF lv_post_op = `++`.
+              lr_post->kind = zif_mjs=>c_node_post_inc.
+            ELSE.
+              lr_post->kind = zif_mjs=>c_node_post_dec.
+            ENDIF.
+            lr_post->left = lr_left.
+            lr_left = lr_post.
+          ELSE.
+            lv_continue = abap_false.
+          ENDIF.
+      ENDCASE.
+      IF lv_continue = abap_true.
+        ls_token = peek( ).
       ENDIF.
     ENDWHILE.
     rr_node = lr_left.
@@ -1349,9 +1397,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD parse_call_args.
-    WHILE peek( )-val <> `)` AND peek( )-kind <> 5.
+    DATA(ls_token) = peek( ).
+    WHILE ls_token-val <> `)` AND ls_token-kind <> 5.
       DATA(lv_is_spread) = abap_false.
-      IF peek( )-val = `...`.
+      IF ls_token-val = `...`.
         next( ).
         lv_is_spread = abap_true.
       ENDIF.
@@ -1362,8 +1411,10 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         <expr_node>-op = `SPREAD`.
       ENDIF.
       APPEND lr_expr TO rt_nodes.
-      IF peek( )-val = `,`.
+      ls_token = peek( ).
+      IF ls_token-val = `,`.
         next( ).
+        ls_token = peek( ).
       ENDIF.
     ENDWHILE.
     expect( `)` ).
