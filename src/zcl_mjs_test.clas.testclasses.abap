@@ -6,6 +6,7 @@ CLASS lcl_test DEFINITION FOR TESTING
     METHODS arr_join FOR TESTING RAISING zcx_mjs_runtime.
     METHODS arr_slice FOR TESTING RAISING zcx_mjs_runtime.
     METHODS arr_pop FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS for_of_destructuring FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_fib FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_loop FOR TESTING RAISING zcx_mjs_runtime.
 ENDCLASS.
@@ -174,6 +175,35 @@ CLASS lcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |PASS=7 FAIL=0| )
       msg = |arr_pop: expected PASS=7 FAIL=0, got: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD for_of_destructuring.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let pass = 0;` && lv_nl &&
+      `let fail = 0;` && lv_nl &&
+      `function assert(cond, msg) {` && lv_nl &&
+      `  if (cond) { pass = pass + 1; } else { fail = fail + 1; console.log("FAIL: " + msg); }` && lv_nl &&
+      `}` && lv_nl &&
+      `let pairs = [{first: 1, second: 2}, {first: 3, second: 4}];` && lv_nl &&
+      `let sum = 0;` && lv_nl &&
+      `for (const {first, second} of pairs) { sum = sum + first * 10 + second; }` && lv_nl &&
+      `assert(sum === 46, "destructure both properties");` && lv_nl &&
+      `let seen = "";` && lv_nl &&
+      `for (const {first} of pairs) { seen = seen + first; }` && lv_nl &&
+      `assert(seen === "13", "destructure single property");` && lv_nl &&
+      `let renamed = "";` && lv_nl &&
+      `for (const {a: x, b: y} of [{a: "p", b: "q"}]) { renamed = x + y; }` && lv_nl &&
+      `assert(renamed === "pq", "destructure with rename");` && lv_nl &&
+      `let missing = "start";` && lv_nl &&
+      `for (const {nope} of [{other: 1}]) { missing = typeof nope; }` && lv_nl &&
+      `assert(missing === "undefined", "missing property is undefined");` && lv_nl &&
+      `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |PASS=4 FAIL=0| )
+      msg = |for_of_destructuring: expected PASS=4 FAIL=0, got: { lv_r }| ).
   ENDMETHOD.
 
   METHOD bench_fib.
