@@ -36,9 +36,11 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_len TYPE i.
     DATA lv_ch  TYPE c LENGTH 1.
     DATA lv_j   TYPE i.
-    FIELD-SYMBOLS <tok> TYPE zif_mjs=>ty_token.
+    FIELD-SYMBOLS <tok>  TYPE zif_mjs=>ty_token.
+    FIELD-SYMBOLS <ptok> TYPE zif_mjs=>ty_token.
     DATA lv_ni  TYPE i.
-    DATA lv_bt  TYPE c LENGTH 1.
+    DATA lv_nc  TYPE c LENGTH 1.
+    DATA lv_n2  TYPE c LENGTH 1.
     DATA lv_d    TYPE c LENGTH 1.
     DATA lv_numlen TYPE i.
     DATA lv_echar  TYPE c LENGTH 1.
@@ -56,63 +58,100 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_esc TYPE c LENGTH 1.
     DATA lv_esc_cp   TYPE i.
     DATA lv_xh       TYPE i.
-    DATA lv_ndot TYPE c LENGTH 1.
-    DATA lv_two TYPE string.
-    DATA lv_three TYPE string.
     DATA lv_idlen TYPE i.
     DATA lv_ic TYPE c LENGTH 1.
     DATA lv_sc TYPE c LENGTH 1.
+    DATA lv_has_non_octal TYPE abap_bool.
+    DATA lv_rxis    TYPE abap_bool.
+    DATA lv_nptok   TYPE i.
+    DATA lv_rxpat   TYPE string.
+    DATA lv_rxflg   TYPE string.
+    DATA lv_rxch    TYPE c LENGTH 1.
+    DATA lv_rxfc    TYPE c LENGTH 1.
+    DATA lv_rxclass TYPE abap_bool.
 
-    lv_bt = |`|.
+    " Hot characters as locals: class-static attribute access per character is
+    " slow, and in the transpiled runtime every literal comparison allocates
+    DATA lv_sp    TYPE c LENGTH 1 VALUE ' '.
+    DATA lv_tab   TYPE c LENGTH 1.
+    DATA lv_lf    TYPE c LENGTH 1.
+    DATA lv_cr    TYPE c LENGTH 1.
+    DATA lv_c0    TYPE c LENGTH 1 VALUE '0'.
+    DATA lv_c9    TYPE c LENGTH 1 VALUE '9'.
+    DATA lv_ca    TYPE c LENGTH 1 VALUE 'a'.
+    DATA lv_cz    TYPE c LENGTH 1 VALUE 'z'.
+    DATA lv_cua   TYPE c LENGTH 1 VALUE 'A'.
+    DATA lv_cuz   TYPE c LENGTH 1 VALUE 'Z'.
+    DATA lv_cus   TYPE c LENGTH 1 VALUE '_'.
+    DATA lv_sq    TYPE c LENGTH 1 VALUE ''''.
+    DATA lv_dq    TYPE c LENGTH 1 VALUE '"'.
+    DATA lv_bt    TYPE c LENGTH 1 VALUE '`'.
+    DATA lv_bsl   TYPE c LENGTH 1 VALUE '\'.
+    DATA lv_dot   TYPE c LENGTH 1 VALUE '.'.
+    DATA lv_slash TYPE c LENGTH 1 VALUE '/'.
+    DATA lv_star  TYPE c LENGTH 1 VALUE '*'.
+    DATA lv_ceq   TYPE c LENGTH 1 VALUE '='.
+
+    lv_tab = cl_abap_char_utilities=>horizontal_tab.
+    lv_lf  = cl_abap_char_utilities=>newline.
+    lv_cr  = gv_cr.
     lv_len = strlen( iv_src ).
-    lv_hexdig = `0123456789abcdef`.
+    " Case-complete hex digits: offsets 16-21 (A-F) map back via -6
+    lv_hexdig = `0123456789abcdefABCDEF`.
 
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
 
-      " Skip whitespace, // and /* comments
-      IF lv_ch = ` ` OR lv_ch = cl_abap_char_utilities=>horizontal_tab
-         OR lv_ch = cl_abap_char_utilities=>newline
-         OR lv_ch = cl_abap_char_utilities=>cr_lf(1).
+      " Whitespace: consume the whole run in a tight loop
+      IF lv_ch = lv_sp OR lv_ch = lv_tab OR lv_ch = lv_lf OR lv_ch = lv_cr.
         lv_i = lv_i + 1.
+        WHILE lv_i < lv_len.
+          lv_ch = iv_src+lv_i(1).
+          IF lv_ch = lv_sp OR lv_ch = lv_tab OR lv_ch = lv_lf OR lv_ch = lv_cr.
+            lv_i = lv_i + 1.
+          ELSE.
+            EXIT.
+          ENDIF.
+        ENDWHILE.
         CONTINUE.
       ENDIF.
 
-      IF lv_i + 1 < lv_len.
-        IF iv_src+lv_i(2) = `//`.
-          lv_i = lv_i + 2.
-          WHILE lv_i < lv_len.
-            IF iv_src+lv_i(1) = cl_abap_char_utilities=>newline.
-              EXIT.
-            ENDIF.
-            lv_i = lv_i + 1.
-          ENDWHILE.
-          CONTINUE.
-        ELSEIF iv_src+lv_i(2) = `/*`.
-          lv_j = lv_i + 2.
-          WHILE lv_j + 1 < lv_len.
-            IF iv_src+lv_j(2) = `*/`.
-              lv_j = lv_j + 2.
-              EXIT.
-            ENDIF.
+      " Identifier / keyword
+      IF lv_ch = lv_cus OR ( lv_ch >= lv_ca AND lv_ch <= lv_cz )
+                        OR ( lv_ch >= lv_cua AND lv_ch <= lv_cuz ).
+        lv_j = lv_i + 1.
+        WHILE lv_j < lv_len.
+          lv_ic = iv_src+lv_j(1).
+          IF lv_ic = lv_cus OR ( lv_ic >= lv_ca AND lv_ic <= lv_cz )
+                            OR ( lv_ic >= lv_cua AND lv_ic <= lv_cuz )
+                            OR ( lv_ic >= lv_c0 AND lv_ic <= lv_c9 ).
             lv_j = lv_j + 1.
-          ENDWHILE.
-          lv_i = lv_j.
-          CONTINUE.
+          ELSE.
+            EXIT.
+          ENDIF.
+        ENDWHILE.
+        lv_idlen = lv_j - lv_i.
+        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+        <tok>-kind = 2.
+        <tok>-val  = iv_src+lv_i(lv_idlen).
+        IF <tok>-val = `instanceof`.
+          <tok>-kind = 3.
         ENDIF.
+        lv_i = lv_j.
+        CONTINUE.
       ENDIF.
 
       " Number: decimal, hex (0x/0X), scientific (1e5)
-      IF lv_ch >= `0` AND lv_ch <= `9`.
+      IF lv_ch >= lv_c0 AND lv_ch <= lv_c9.
         " Hex literal: 0x... or 0X...
-        IF lv_ch = `0` AND lv_i + 1 < lv_len.
+        IF lv_ch = lv_c0 AND lv_i + 1 < lv_len.
           lv_ni = lv_i + 1.
           lv_nhc = iv_src+lv_ni(1).
           IF lv_nhc = `x` OR lv_nhc = `X`.
             lv_j = lv_i + 2.
             WHILE lv_j < lv_len.
               lv_d = iv_src+lv_j(1).
-              IF ( lv_d >= `0` AND lv_d <= `9` )
+              IF ( lv_d >= lv_c0 AND lv_d <= lv_c9 )
                  OR ( lv_d >= `a` AND lv_d <= `f` )
                  OR ( lv_d >= `A` AND lv_d <= `F` ).
                 lv_j = lv_j + 1.
@@ -120,13 +159,14 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            lv_hexdig = `0123456789abcdef`.
             lv_hexval = 0.
             DO lv_j - lv_i - 2 TIMES.
               lv_hk = lv_i + 1 + sy-index.
               lv_hc = iv_src+lv_hk(1).
-              TRANSLATE lv_hc TO LOWER CASE.
               FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+              IF lv_hpos > 15.
+                lv_hpos = lv_hpos - 6.
+              ENDIF.
               lv_hexval = lv_hexval * 16 + lv_hpos.
             ENDDO.
             APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
@@ -145,7 +185,6 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            lv_hexdig = `0123456789abcdef`.
             lv_hexval = 0.
             DO lv_j - lv_i - 2 TIMES.
               lv_hk = lv_i + 1 + sy-index.
@@ -163,13 +202,12 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             lv_j = lv_i + 2.
             WHILE lv_j < lv_len.
               lv_d = iv_src+lv_j(1).
-              IF lv_d >= `0` AND lv_d <= `7`.
+              IF lv_d >= lv_c0 AND lv_d <= `7`.
                 lv_j = lv_j + 1.
               ELSE.
                 EXIT.
               ENDIF.
             ENDWHILE.
-            lv_hexdig = `0123456789abcdef`.
             lv_hexval = 0.
             DO lv_j - lv_i - 2 TIMES.
               lv_hk = lv_i + 1 + sy-index.
@@ -182,14 +220,14 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             <tok>-val  = |{ lv_hexval }|.
             lv_i = lv_j.
             CONTINUE.
-          ELSEIF lv_nhc >= `0` AND lv_nhc <= `7`.
+          ELSEIF lv_nhc >= lv_c0 AND lv_nhc <= `7`.
             " Legacy octal literal: 0NNN (non-strict mode ECMAScript)
             " Scan all consecutive decimal digits first; if any 8/9 found → decimal
             lv_j = lv_i + 1.
-            DATA lv_has_non_octal TYPE abap_bool VALUE abap_false.
+            lv_has_non_octal = abap_false.
             WHILE lv_j < lv_len.
               lv_d = iv_src+lv_j(1).
-              IF lv_d >= `0` AND lv_d <= `9`.
+              IF lv_d >= lv_c0 AND lv_d <= lv_c9.
                 IF lv_d = `8` OR lv_d = `9`.
                   lv_has_non_octal = abap_true.
                 ENDIF.
@@ -220,7 +258,7 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
         lv_j = lv_i.
         WHILE lv_j < lv_len.
           lv_d = iv_src+lv_j(1).
-          IF ( lv_d >= `0` AND lv_d <= `9` ) OR lv_d = `.`.
+          IF ( lv_d >= lv_c0 AND lv_d <= lv_c9 ) OR lv_d = lv_dot.
             lv_j = lv_j + 1.
           ELSE.
             EXIT.
@@ -238,7 +276,7 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             ENDIF.
             WHILE lv_j < lv_len.
               lv_d = iv_src+lv_j(1).
-              IF lv_d >= `0` AND lv_d <= `9`.
+              IF lv_d >= lv_c0 AND lv_d <= lv_c9.
                 lv_j = lv_j + 1.
               ELSE.
                 EXIT.
@@ -255,7 +293,7 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
       ENDIF.
 
       " String (single-quote, double-quote, or backtick template literal)
-      IF lv_ch = `'` OR lv_ch = `"` OR lv_ch = lv_bt.
+      IF lv_ch = lv_sq OR lv_ch = lv_dq OR lv_ch = lv_bt.
         lv_quote = lv_ch.
         lv_j = lv_i + 1.
         lv_chunk_start = lv_j.
@@ -269,7 +307,7 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             ENDIF.
             EXIT.
           ENDIF.
-          IF lv_sc = `\` AND lv_j + 1 < lv_len.
+          IF lv_sc = lv_bsl AND lv_j + 1 < lv_len.
             lv_chunk_len = lv_j - lv_chunk_start.
             IF lv_chunk_len > 0.
               lv_sbuf = lv_sbuf && iv_src+lv_chunk_start(lv_chunk_len).
@@ -278,11 +316,11 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             lv_esc = iv_src+lv_j(1).
             CASE lv_esc.
               WHEN `n`.
-                lv_sbuf = lv_sbuf && cl_abap_char_utilities=>newline.
+                lv_sbuf = lv_sbuf && lv_lf.
               WHEN `t`.
-                lv_sbuf = lv_sbuf && cl_abap_char_utilities=>horizontal_tab.
+                lv_sbuf = lv_sbuf && lv_tab.
               WHEN `r`.  " CR = 0x0D
-                lv_sbuf = lv_sbuf && gv_cr.
+                lv_sbuf = lv_sbuf && lv_cr.
               WHEN `b`.  " backspace = 0x08
                 lv_sbuf = lv_sbuf && gv_backspace.
               WHEN `f`.  " form feed = 0x0C
@@ -296,8 +334,10 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 lv_xh = lv_j + 1.
                 DO 2 TIMES.
                   lv_hc = iv_src+lv_xh(1).
-                  TRANSLATE lv_hc TO LOWER CASE.
                   FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                  IF lv_hpos > 15.
+                    lv_hpos = lv_hpos - 6.
+                  ENDIF.
                   lv_esc_cp = lv_esc_cp * 16 + lv_hpos.
                   lv_xh = lv_xh + 1.
                 ENDDO.
@@ -316,8 +356,10 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 lv_xh = lv_j + 1.
                 DO 4 TIMES.
                   lv_hc = iv_src+lv_xh(1).
-                  TRANSLATE lv_hc TO LOWER CASE.
                   FIND FIRST OCCURRENCE OF lv_hc IN lv_hexdig MATCH OFFSET lv_hpos.
+                  IF lv_hpos > 15.
+                    lv_hpos = lv_hpos - 6.
+                  ENDIF.
                   lv_esc_cp = lv_esc_cp * 16 + lv_hpos.
                   lv_xh = lv_xh + 1.
                 ENDDO.
@@ -337,13 +379,13 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                 lv_sbuf = lv_sbuf && `'`.
               WHEN `"`.
                 lv_sbuf = lv_sbuf && `"`.
-              WHEN cl_abap_char_utilities=>newline.   " \<LF> line continuation
+              WHEN lv_lf.                             " \<LF> line continuation
                 " skip – produce nothing
-              WHEN cl_abap_char_utilities=>cr_lf(1).  " \<CR> line continuation
+              WHEN lv_cr.                             " \<CR> line continuation
                 " skip; also consume following <LF> if present (CRLF line ending)
                 IF lv_j + 1 < lv_len.
                   lv_ni = lv_j + 1.
-                  IF iv_src+lv_ni(1) = cl_abap_char_utilities=>newline.
+                  IF iv_src+lv_ni(1) = lv_lf.
                     lv_j = lv_ni.
                   ENDIF.
                 ENDIF.
@@ -372,203 +414,320 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
         CONTINUE.
       ENDIF.
 
-      " Identifier / keyword
-      IF lv_ch = `_` OR ( lv_ch >= `a` AND lv_ch <= `z` )
-                      OR ( lv_ch >= `A` AND lv_ch <= `Z` ).
-        lv_j = lv_i.
-        WHILE lv_j < lv_len.
-          lv_ic = iv_src+lv_j(1).
-          IF lv_ic = `_` OR ( lv_ic >= `a` AND lv_ic <= `z` )
-                         OR ( lv_ic >= `A` AND lv_ic <= `Z` )
-                         OR ( lv_ic >= `0` AND lv_ic <= `9` ).
-            lv_j = lv_j + 1.
-          ELSE.
-            EXIT.
-          ENDIF.
-        ENDWHILE.
-        lv_idlen = lv_j - lv_i.
-        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-        <tok>-kind = 2.
-        <tok>-val  = iv_src+lv_i(lv_idlen).
-        IF <tok>-val = `instanceof`.
-          <tok>-kind = 3.
-        ENDIF.
-        lv_i = lv_j.
-        CONTINUE.
-      ENDIF.
-
-      " Multi-char operators
-      IF lv_i + 1 < lv_len.
-        lv_two = iv_src+lv_i(2).
-        IF lv_two = `?.` OR lv_two = `??`.
+      " Operators and punctuation: dispatch on the first character, then peek
+      " single characters - no 2/3-char substring comparisons
+      CASE lv_ch.
+        WHEN '(' OR ')' OR '{' OR '}' OR '[' OR ']' OR ';' OR ',' OR ':' OR '*' OR '%'.
           APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
           <tok>-kind = 3.
-          <tok>-val  = lv_two.
-          lv_i = lv_i + 2.
-          CONTINUE.
-        ENDIF.
-        IF lv_two = `==` OR lv_two = `!=` OR lv_two = `<=`
-           OR lv_two = `>=` OR lv_two = `&&` OR lv_two = `||`
-           OR lv_two = `=>` OR lv_two = `+=` OR lv_two = `-=`
-           OR lv_two = `++` OR lv_two = `--`.
-          IF lv_i + 2 < lv_len AND
-             ( lv_two = `==` OR lv_two = `!=` ).
-            lv_three = iv_src+lv_i(3).
-            IF lv_three = `===` OR lv_three = `!==`.
-              APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-              <tok>-kind = 3.
-              <tok>-val  = lv_three.
+          <tok>-val  = lv_ch.
+          lv_i = lv_i + 1.
+
+        WHEN '='.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          IF lv_nc = lv_ceq.
+            CLEAR lv_n2.
+            lv_ni = lv_i + 2.
+            IF lv_ni < lv_len.
+              lv_n2 = iv_src+lv_ni(1).
+            ENDIF.
+            IF lv_n2 = lv_ceq.
+              <tok>-val = `===`.
               lv_i = lv_i + 3.
-              CONTINUE.
+            ELSE.
+              <tok>-val = `==`.
+              lv_i = lv_i + 2.
             ENDIF.
+          ELSEIF lv_nc = `>`.
+            <tok>-val = `=>`.
+            lv_i = lv_i + 2.
+          ELSE.
+            <tok>-val = `=`.
+            lv_i = lv_i + 1.
+          ENDIF.
+
+        WHEN '!'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
           ENDIF.
           APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
           <tok>-kind = 3.
-          <tok>-val  = lv_two.
-          lv_i = lv_i + 2.
-          CONTINUE.
-        ENDIF.
-      ENDIF.
-      IF lv_ch = `.` AND lv_i + 2 < lv_len AND iv_src+lv_i(3) = `...`.
-        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-        <tok>-kind = 3.
-        <tok>-val  = `...`.
-        lv_i = lv_i + 3.
-        CONTINUE.
-      ENDIF.
-
-      " Dot-prefixed number: .5, .0e1
-      IF lv_ch = `.` AND lv_i + 1 < lv_len.
-        lv_ni = lv_i + 1.
-        lv_ndot = iv_src+lv_ni(1).
-        IF lv_ndot >= `0` AND lv_ndot <= `9`.
-          lv_j = lv_i.
-          WHILE lv_j < lv_len.
-            lv_d = iv_src+lv_j(1).
-            IF ( lv_d >= `0` AND lv_d <= `9` ) OR lv_d = `.`.
-              lv_j = lv_j + 1.
+          IF lv_nc = lv_ceq.
+            CLEAR lv_n2.
+            lv_ni = lv_i + 2.
+            IF lv_ni < lv_len.
+              lv_n2 = iv_src+lv_ni(1).
+            ENDIF.
+            IF lv_n2 = lv_ceq.
+              <tok>-val = `!==`.
+              lv_i = lv_i + 3.
             ELSE.
-              EXIT.
+              <tok>-val = `!=`.
+              lv_i = lv_i + 2.
             ENDIF.
-          ENDWHILE.
-          IF lv_j < lv_len.
-            lv_echar = iv_src+lv_j(1).
-            IF lv_echar = `e` OR lv_echar = `E`.
-              lv_j = lv_j + 1.
-              IF lv_j < lv_len.
-                lv_esign = iv_src+lv_j(1).
-                IF lv_esign = `+` OR lv_esign = `-`.
-                  lv_j = lv_j + 1.
-                ENDIF.
-              ENDIF.
-              WHILE lv_j < lv_len.
-                lv_d = iv_src+lv_j(1).
-                IF lv_d >= `0` AND lv_d <= `9`.
-                  lv_j = lv_j + 1.
-                ELSE.
-                  EXIT.
-                ENDIF.
-              ENDWHILE.
-            ENDIF.
+          ELSE.
+            <tok>-val = `!`.
+            lv_i = lv_i + 1.
           ENDIF.
-          lv_numlen = lv_j - lv_i.
+
+        WHEN '<' OR '>'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
           APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-          <tok>-kind = 0.
-          <tok>-val  = iv_src+lv_i(lv_numlen).
-          lv_i = lv_j.
-          CONTINUE.
-        ENDIF.
-      ENDIF.
-
-      " Regex literal: /pattern/flags — when context indicates start of expression
-      " (not after number, string, identifier, or closing bracket which would mean division)
-      IF lv_ch = `/`.
-        DATA lv_rxis  TYPE abap_bool VALUE abap_true.
-        DATA ls_ptok  TYPE zif_mjs=>ty_token.
-        DATA lv_nptok TYPE i.
-        lv_nptok = lines( rt_tokens ).
-        IF lv_nptok > 0.
-          READ TABLE rt_tokens INDEX lv_nptok INTO ls_ptok.
-          IF ls_ptok-kind = 0                      " number
-             OR ls_ptok-kind = 1                   " string
-             OR ( ls_ptok-kind = 2                 " identifier (but not expression-starting keywords)
-                  AND ls_ptok-val <> `return`
-                  AND ls_ptok-val <> `typeof`
-                  AND ls_ptok-val <> `instanceof`
-                  AND ls_ptok-val <> `in`
-                  AND ls_ptok-val <> `of`
-                  AND ls_ptok-val <> `throw`
-                  AND ls_ptok-val <> `case`
-                  AND ls_ptok-val <> `delete`
-                  AND ls_ptok-val <> `new`
-                  AND ls_ptok-val <> `void` )
-             OR ls_ptok-val = `)` OR ls_ptok-val = `]` OR ls_ptok-val = `}`.
-            lv_rxis = abap_false.
+          <tok>-kind = 3.
+          IF lv_nc = lv_ceq.
+            <tok>-val = lv_ch && lv_nc.
+            lv_i = lv_i + 2.
+          ELSE.
+            <tok>-val = lv_ch.
+            lv_i = lv_i + 1.
           ENDIF.
-        ENDIF.
-        IF lv_rxis = abap_true.
-          DATA lv_rxpat  TYPE string.
-          DATA lv_rxflg  TYPE string.
-          DATA lv_rxch   TYPE c LENGTH 1.
-          DATA lv_rxfc   TYPE c LENGTH 1.
-          DATA lv_rxclass TYPE abap_bool VALUE abap_false.
-          CLEAR lv_rxpat.
-          CLEAR lv_rxflg.
-          lv_j = lv_i + 1.
-          WHILE lv_j < lv_len.
-            lv_rxch = iv_src+lv_j(1).
-            IF lv_rxch = `/` AND lv_rxclass = abap_false.
-              EXIT.
+
+        WHEN '+' OR '-'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          IF lv_nc = lv_ch OR lv_nc = lv_ceq.
+            <tok>-val = lv_ch && lv_nc.
+            lv_i = lv_i + 2.
+          ELSE.
+            <tok>-val = lv_ch.
+            lv_i = lv_i + 1.
+          ENDIF.
+
+        WHEN '?'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          IF lv_nc = lv_dot OR lv_nc = `?`.
+            <tok>-val = lv_ch && lv_nc.
+            lv_i = lv_i + 2.
+          ELSE.
+            <tok>-val = `?`.
+            lv_i = lv_i + 1.
+          ENDIF.
+
+        WHEN '&'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          IF lv_nc = `&`.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 3.
+            <tok>-val  = `&&`.
+            lv_i = lv_i + 2.
+          ELSE.
+            " single & not supported: skip (pre-existing behavior)
+            lv_i = lv_i + 1.
+          ENDIF.
+
+        WHEN '|'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          IF lv_nc = `|`.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 3.
+            <tok>-val  = `||`.
+            lv_i = lv_i + 2.
+          ELSE.
+            " single | not supported: skip (pre-existing behavior)
+            lv_i = lv_i + 1.
+          ENDIF.
+
+        WHEN '.'.
+          CLEAR lv_nc.
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+          ENDIF.
+          IF lv_nc = lv_dot.
+            CLEAR lv_n2.
+            lv_ni = lv_i + 2.
+            IF lv_ni < lv_len.
+              lv_n2 = iv_src+lv_ni(1).
             ENDIF.
-            IF lv_rxch = `[` AND lv_rxclass = abap_false.
-              lv_rxclass = abap_true.
-            ELSEIF lv_rxch = `]` AND lv_rxclass = abap_true.
-              lv_rxclass = abap_false.
-            ENDIF.
-            IF lv_rxch = `\` AND lv_j + 1 < lv_len.
-              lv_rxpat = lv_rxpat && `\`.
-              lv_j = lv_j + 1.
-              lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 3.
+            IF lv_n2 = lv_dot.
+              <tok>-val = `...`.
+              lv_i = lv_i + 3.
             ELSE.
-              lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+              <tok>-val = `.`.
+              lv_i = lv_i + 1.
             ENDIF.
-            lv_j = lv_j + 1.
-          ENDWHILE.
-          IF lv_j < lv_len.
-            lv_j = lv_j + 1.  " skip closing /
+          ELSEIF lv_nc >= lv_c0 AND lv_nc <= lv_c9.
+            " Dot-prefixed number: .5, .0e1
+            lv_j = lv_i.
             WHILE lv_j < lv_len.
-              lv_rxfc = iv_src+lv_j(1).
-              IF lv_rxfc >= `a` AND lv_rxfc <= `z`.
-                lv_rxflg = lv_rxflg && lv_rxfc.
+              lv_d = iv_src+lv_j(1).
+              IF ( lv_d >= lv_c0 AND lv_d <= lv_c9 ) OR lv_d = lv_dot.
                 lv_j = lv_j + 1.
               ELSE.
                 EXIT.
               ENDIF.
             ENDWHILE.
+            IF lv_j < lv_len.
+              lv_echar = iv_src+lv_j(1).
+              IF lv_echar = `e` OR lv_echar = `E`.
+                lv_j = lv_j + 1.
+                IF lv_j < lv_len.
+                  lv_esign = iv_src+lv_j(1).
+                  IF lv_esign = `+` OR lv_esign = `-`.
+                    lv_j = lv_j + 1.
+                  ENDIF.
+                ENDIF.
+                WHILE lv_j < lv_len.
+                  lv_d = iv_src+lv_j(1).
+                  IF lv_d >= lv_c0 AND lv_d <= lv_c9.
+                    lv_j = lv_j + 1.
+                  ELSE.
+                    EXIT.
+                  ENDIF.
+                ENDWHILE.
+              ENDIF.
+            ENDIF.
+            lv_numlen = lv_j - lv_i.
             APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-            <tok>-kind = 6.
-            <tok>-val  = lv_rxpat && cl_abap_char_utilities=>newline && lv_rxflg.
+            <tok>-kind = 0.
+            <tok>-val  = iv_src+lv_i(lv_numlen).
             lv_i = lv_j.
-            CONTINUE.
+          ELSE.
+            APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+            <tok>-kind = 3.
+            <tok>-val  = `.`.
+            lv_i = lv_i + 1.
           ENDIF.
-        ENDIF.
-      ENDIF.
 
-      " Single char op/punc
-      IF lv_ch = `+` OR lv_ch = `-` OR lv_ch = `*` OR lv_ch = `/`
-         OR lv_ch = `%` OR lv_ch = `=` OR lv_ch = `<` OR lv_ch = `>`
-         OR lv_ch = `!` OR lv_ch = `(` OR lv_ch = `)` OR lv_ch = `,`
-         OR lv_ch = `{` OR lv_ch = `}` OR lv_ch = `;` OR lv_ch = `:`
-         OR lv_ch = `.` OR lv_ch = `[` OR lv_ch = `]`
-         OR lv_ch = `?`.
-        APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
-        <tok>-kind = 3.
-        <tok>-val  = lv_ch.
-        lv_i = lv_i + 1.
-        CONTINUE.
-      ENDIF.
+        WHEN '/'.
+          " Comment?
+          lv_ni = lv_i + 1.
+          IF lv_ni < lv_len.
+            lv_nc = iv_src+lv_ni(1).
+            IF lv_nc = lv_slash.
+              " Line comment: skip to end of line
+              lv_i = lv_i + 2.
+              WHILE lv_i < lv_len.
+                IF iv_src+lv_i(1) = lv_lf.
+                  EXIT.
+                ENDIF.
+                lv_i = lv_i + 1.
+              ENDWHILE.
+              CONTINUE.
+            ELSEIF lv_nc = lv_star.
+              " Block comment: skip to */
+              lv_j = lv_i + 2.
+              WHILE lv_j < lv_len.
+                IF iv_src+lv_j(1) = lv_star.
+                  lv_ni = lv_j + 1.
+                  IF lv_ni < lv_len AND iv_src+lv_ni(1) = lv_slash.
+                    lv_j = lv_ni + 1.
+                    EXIT.
+                  ENDIF.
+                ENDIF.
+                lv_j = lv_j + 1.
+              ENDWHILE.
+              lv_i = lv_j.
+              CONTINUE.
+            ENDIF.
+          ENDIF.
+          " Regex literal: /pattern/flags — when context indicates start of expression
+          " (not after number, string, identifier, or closing bracket which would mean division)
+          lv_rxis = abap_true.
+          lv_nptok = lines( rt_tokens ).
+          IF lv_nptok > 0.
+            READ TABLE rt_tokens INDEX lv_nptok ASSIGNING <ptok>.
+            IF <ptok>-kind = 0                      " number
+               OR <ptok>-kind = 1                   " string
+               OR ( <ptok>-kind = 2                 " identifier (but not expression-starting keywords)
+                    AND <ptok>-val <> `return`
+                    AND <ptok>-val <> `typeof`
+                    AND <ptok>-val <> `instanceof`
+                    AND <ptok>-val <> `in`
+                    AND <ptok>-val <> `of`
+                    AND <ptok>-val <> `throw`
+                    AND <ptok>-val <> `case`
+                    AND <ptok>-val <> `delete`
+                    AND <ptok>-val <> `new`
+                    AND <ptok>-val <> `void` )
+               OR <ptok>-val = `)` OR <ptok>-val = `]` OR <ptok>-val = `}`.
+              lv_rxis = abap_false.
+            ENDIF.
+          ENDIF.
+          IF lv_rxis = abap_true.
+            CLEAR lv_rxpat.
+            CLEAR lv_rxflg.
+            lv_rxclass = abap_false.
+            lv_j = lv_i + 1.
+            WHILE lv_j < lv_len.
+              lv_rxch = iv_src+lv_j(1).
+              IF lv_rxch = lv_slash AND lv_rxclass = abap_false.
+                EXIT.
+              ENDIF.
+              IF lv_rxch = `[` AND lv_rxclass = abap_false.
+                lv_rxclass = abap_true.
+              ELSEIF lv_rxch = `]` AND lv_rxclass = abap_true.
+                lv_rxclass = abap_false.
+              ENDIF.
+              IF lv_rxch = lv_bsl AND lv_j + 1 < lv_len.
+                lv_rxpat = lv_rxpat && lv_bsl.
+                lv_j = lv_j + 1.
+                lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+              ELSE.
+                lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+              ENDIF.
+              lv_j = lv_j + 1.
+            ENDWHILE.
+            IF lv_j < lv_len.
+              lv_j = lv_j + 1.  " skip closing /
+              WHILE lv_j < lv_len.
+                lv_rxfc = iv_src+lv_j(1).
+                IF lv_rxfc >= lv_ca AND lv_rxfc <= lv_cz.
+                  lv_rxflg = lv_rxflg && lv_rxfc.
+                  lv_j = lv_j + 1.
+                ELSE.
+                  EXIT.
+                ENDIF.
+              ENDWHILE.
+              APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+              <tok>-kind = 6.
+              <tok>-val  = lv_rxpat && lv_lf && lv_rxflg.
+              lv_i = lv_j.
+              CONTINUE.
+            ENDIF.
+          ENDIF.
+          " Division or lone slash
+          APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
+          <tok>-kind = 3.
+          <tok>-val  = `/`.
+          lv_i = lv_i + 1.
 
-      lv_i = lv_i + 1.
+        WHEN OTHERS.
+          lv_i = lv_i + 1.
+      ENDCASE.
     ENDWHILE.
 
     APPEND INITIAL LINE TO rt_tokens ASSIGNING <tok>.
