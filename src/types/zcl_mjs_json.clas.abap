@@ -70,7 +70,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
         DATA lv_obj_first TYPE abap_bool VALUE abap_true.
         lv_obj_out = `{`.
         LOOP AT is_val-obj->props ASSIGNING FIELD-SYMBOL(<prop>).
-          DATA(ls_pval) = zcl_mjs_val=>unbox_value( <prop>-val ).
+          DATA(ls_pval) = <prop>-val.
           " skip undefined and function values
           IF ls_pval-type = zif_mjs=>c_type_undefined OR ls_pval-type = zif_mjs=>c_type_function.
             CONTINUE.

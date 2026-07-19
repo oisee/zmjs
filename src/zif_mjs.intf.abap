@@ -153,6 +153,9 @@ INTERFACE zif_mjs PUBLIC.
       max_slots       TYPE i,                  " number of slot entries needed
       slot_map        TYPE REF TO tt_slot_map, " shared ref — allocated once, reused across calls
       needs_arguments TYPE abap_bool,          " X = function references 'arguments' pseudo-array
+      " Hoisted function declarations, collected once at compile time so
+      " call_function does not rescan the whole body on every call
+      hoisted         TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
     END OF ty_function.
 
 ENDINTERFACE.
