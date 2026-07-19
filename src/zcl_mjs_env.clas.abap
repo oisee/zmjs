@@ -19,6 +19,10 @@ CLASS zcl_mjs_env DEFINITION PUBLIC.
     DATA ret_val    TYPE zif_mjs=>ty_value.
     DATA breaking   TYPE abap_bool.
     DATA continuing TYPE abap_bool.
+    " 'this' binding: dedicated field instead of a vars entry — avoids the
+    " hash insert per call and the boxing that a REF TO data binding needed.
+    DATA this_val   TYPE zif_mjs=>ty_value.
+    DATA this_bound TYPE abap_bool.
 
     METHODS constructor
       IMPORTING io_parent TYPE REF TO zcl_mjs_env OPTIONAL.
@@ -36,6 +40,9 @@ CLASS zcl_mjs_env DEFINITION PUBLIC.
     METHODS define
       IMPORTING iv_name TYPE string
                 is_val  TYPE zif_mjs=>ty_value.
+    " Resolve 'this' by walking up to the nearest env that binds it
+    METHODS get_this
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value.
     " Check whether a variable name exists anywhere in the scope chain
     METHODS has
       IMPORTING iv_name        TYPE string
@@ -74,7 +81,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
         READ TABLE slots INDEX <sm>-slot INTO rs_val.
         RETURN.
       ENDIF.
-      " Not a local slot — fall through to vars (for 'this', 'arguments', etc.)
+      " Not a local slot — fall through to vars (for 'arguments', etc.)
     ENDIF.
     READ TABLE vars WITH TABLE KEY name = iv_name ASSIGNING FIELD-SYMBOL(<v>).
     IF sy-subrc = 0.
@@ -120,6 +127,18 @@ CLASS zcl_mjs_env IMPLEMENTATION.
     ENDWHILE.
 
     es_val-type = zif_mjs=>c_type_undefined.
+  ENDMETHOD.
+
+  METHOD get_this.
+    DATA lo_cur TYPE REF TO zcl_mjs_env.
+    lo_cur = me.
+    WHILE lo_cur IS BOUND.
+      IF lo_cur->this_bound = abap_true.
+        rs_val = lo_cur->this_val.
+        RETURN.
+      ENDIF.
+      lo_cur = lo_cur->parent.
+    ENDWHILE.
   ENDMETHOD.
 
   METHOD has.
@@ -188,7 +207,7 @@ CLASS zcl_mjs_env IMPLEMENTATION.
         set_slot( iv_slot = <sm>-slot is_val = is_val ).
         RETURN.
       ENDIF.
-      " Not a slot (e.g. 'this', 'arguments') — fall through to vars
+      " Not a slot (e.g. 'arguments') — fall through to vars
     ENDIF.
     READ TABLE vars WITH TABLE KEY name = iv_name ASSIGNING FIELD-SYMBOL(<v>).
     IF sy-subrc = 0.

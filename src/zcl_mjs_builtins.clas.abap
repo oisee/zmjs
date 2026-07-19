@@ -141,19 +141,16 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
     IF ls_obj-type <> zif_mjs=>c_type_object OR ls_obj-obj IS NOT BOUND OR ls_desc-type <> zif_mjs=>c_type_object OR ls_desc-obj IS NOT BOUND.
       RETURN.
     ENDIF.
-    DATA(lr_vdesc) = ls_desc-obj->get( `value` ).
-    IF lr_vdesc IS BOUND.
-      ls_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_prop ) ir_val = lr_vdesc ).
+    " has() distinguishes a descriptor with 'value: undefined' from no 'value' key
+    IF ls_desc-obj->has( `value` ) = abap_true.
+      ls_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_prop ) is_val = ls_desc-obj->get( `value` ) ).
     ELSE.
-      DATA(lr_get) = ls_desc-obj->get( `get` ).
-      IF lr_get IS BOUND.
-        DATA(ls_get_val) = zcl_mjs_val=>unbox_value( lr_get ).
-        IF ls_get_val-type = zif_mjs=>c_type_function.
-          DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
-          ls_getter_wrap-type = zif_mjs=>c_type_getter.
-          ls_getter_wrap-fn   = ls_get_val-fn.
-          ls_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_prop ) ir_val = zcl_mjs_val=>box_value( ls_getter_wrap ) ).
-        ENDIF.
+      DATA(ls_get_val) = ls_desc-obj->get( `get` ).
+      IF ls_get_val-type = zif_mjs=>c_type_function.
+        DATA ls_getter_wrap TYPE zif_mjs=>ty_value.
+        ls_getter_wrap-type = zif_mjs=>c_type_getter.
+        ls_getter_wrap-fn   = ls_get_val-fn.
+        ls_obj-obj->set( iv_key = zcl_mjs_val=>to_string( ls_prop ) is_val = ls_getter_wrap ).
       ENDIF.
     ENDIF.
     rs_val = ls_obj.
@@ -167,7 +164,7 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
 
     " Internal storage for Set items (highly simplified for now)
     DATA(ls_set_data) = zcl_mjs_val=>array_val( VALUE #( ) ).
-    rs_val-obj->set( iv_key = `[[SetData]]` ir_val = zcl_mjs_val=>box_value( ls_set_data ) ).
+    rs_val-obj->set( iv_key = `[[SetData]]` is_val = ls_set_data ).
 
     " Handle constructor argument (iterable/array)
     IF is_init-type = zif_mjs=>c_type_array AND is_init-arr IS BOUND.
@@ -180,11 +177,10 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
 
   METHOD set_has.
     rs_val = zcl_mjs_val=>undefined_val( ).
-    DATA(lr_data) = is_obj-obj->get( `[[SetData]]` ).
-    IF lr_data IS NOT BOUND OR lines( it_args ) < 1.
+    DATA(ls_data) = is_obj-obj->get( `[[SetData]]` ).
+    IF ls_data-type = zif_mjs=>c_type_undefined OR lines( it_args ) < 1.
       RETURN.
     ENDIF.
-    DATA(ls_data) = zcl_mjs_val=>unbox_value( lr_data ).
     DATA(ls_target) = it_args[ 1 ].
     DATA(lv_found) = abap_false.
     IF ls_data-type = zif_mjs=>c_type_array AND ls_data-arr IS BOUND.

@@ -9,7 +9,8 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING ir_fn         TYPE REF TO data
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
-                ir_this       TYPE REF TO data OPTIONAL
+                " receiver; undefined = plain call, propagates the caller's this
+                is_this       TYPE zif_mjs=>ty_value OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
 
@@ -150,7 +151,6 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 iv_method     TYPE string
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
-                ir_obj_node   TYPE REF TO data OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
     CLASS-METHODS compile_function
@@ -218,7 +218,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     lo_env->define( iv_name = `URIError`       is_val = zcl_mjs_val=>undefined_val( ) ).
     lo_env->define( iv_name = `EvalError`      is_val = zcl_mjs_val=>undefined_val( ) ).
     " 'this' at the global scope is the global object (sloppy-mode)
-    lo_env->define( iv_name = `this`      is_val = zcl_mjs_val=>object_val( ) ).
+    lo_env->this_val   = zcl_mjs_val=>object_val( ).
+    lo_env->this_bound = abap_true.
     lo_env->define( iv_name = `arguments` is_val = zcl_mjs_val=>undefined_val( ) ).
     " Other JS builtins / keywords that may appear as expressions in partially-parsed code
     lo_env->define( iv_name = `eval`      is_val = zcl_mjs_val=>undefined_val( ) ).
@@ -247,7 +248,6 @@ CLASS zcl_mjs IMPLEMENTATION.
   METHOD call_function.
     " ir_fn is REF TO zif_mjs=>ty_function - modifiable for lazy compile
     FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
-    FIELD-SYMBOLS <this> TYPE zif_mjs=>ty_value.
 
     ASSIGN ir_fn->* TO <fn>.
 
@@ -276,13 +276,14 @@ CLASS zcl_mjs IMPLEMENTATION.
 
     " slots grow on first write (set_slot); a missing index reads as undefined
 
-    " Bind 'this' in vars (not slots - special name, always slow-path)
-    IF ir_this IS BOUND.
-      ASSIGN ir_this->* TO <this>.
-      lo_call_env->define( iv_name = `this` is_val = <this> ).
+    " Bind 'this': the receiver, or (sloppy-mode plain call) the caller's this.
+    " Object/array payloads are references, so mutations through 'this' are
+    " visible to the caller without any writeback.
+    lo_call_env->this_bound = abap_true.
+    IF is_this-type <> zif_mjs=>c_type_undefined.
+      lo_call_env->this_val = is_this.
     ELSE.
-      " Sloppy-mode plain call: propagate this from the calling scope
-      lo_call_env->define( iv_name = `this` is_val = io_env->get( `this` ) ).
+      lo_call_env->this_val = io_env->get_this( ).
     ENDIF.
 
     " Bind params to slots (fast path: direct index write)
@@ -333,15 +334,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
 
     " Hoist function declarations (JS hoisting: fn decls precede other statements)
-    FIELD-SYMBOLS <hst_n> TYPE zif_mjs=>ty_node.
-    LOOP AT <fn>-body INTO DATA(lr_hoist).
-      IF lr_hoist IS NOT BOUND.
-        CONTINUE.
-      ENDIF.
-      ASSIGN lr_hoist->* TO <hst_n>.
-      IF sy-subrc = 0 AND <hst_n>-kind = zif_mjs=>c_node_func_decl AND <hst_n>-str IS NOT INITIAL.
-        eval_node( ir_node = lr_hoist io_env = lo_call_env ).
-      ENDIF.
+    " — the declaration list is precomputed in compile_function
+    LOOP AT <fn>-hoisted INTO DATA(lr_hoist).
+      eval_node( ir_node = lr_hoist io_env = lo_call_env ).
     ENDLOOP.
 
     " Execute body
@@ -353,17 +348,6 @@ CLASS zcl_mjs IMPLEMENTATION.
       ENDIF.
     ENDLOOP.
 
-    " Write back 'this' mutations (for constructor use)
-    IF ir_this IS BOUND.
-      ASSIGN ir_this->* TO <this>.
-      IF <this>-type = zif_mjs=>c_type_object.
-        DATA(ls_updated) = lo_call_env->get( `this` ).
-        " same reference = body mutated our object directly, nothing to copy
-        IF ls_updated-type = zif_mjs=>c_type_object AND ls_updated-obj <> <this>-obj.
-          <this>-obj->copy_from( ls_updated-obj ).
-        ENDIF.
-      ENDIF.
-    ENDIF.
   ENDMETHOD.
 
   METHOD materialize_function.
@@ -443,6 +427,19 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
       ENDLOOP.
     ENDIF.
+
+    " Collect hoisted function declarations once (used by every call)
+    CLEAR <fn>-hoisted.
+    FIELD-SYMBOLS <hst_n> TYPE zif_mjs=>ty_node.
+    LOOP AT <fn>-body INTO lr_s.
+      IF lr_s IS NOT BOUND.
+        CONTINUE.
+      ENDIF.
+      ASSIGN lr_s->* TO <hst_n>.
+      IF sy-subrc = 0 AND <hst_n>-kind = zif_mjs=>c_node_func_decl AND <hst_n>-str IS NOT INITIAL.
+        APPEND lr_s TO <fn>-hoisted.
+      ENDIF.
+    ENDLOOP.
   ENDMETHOD.
 
   METHOD collect_slots.
@@ -635,6 +632,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         " Fast path: direct slot read (no method call overhead)
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot INTO rs_val.
+        ELSEIF <n>-str = `this`.
+          rs_val = io_env->get_this( ).
         ELSE.
           DATA lv_ident_found TYPE abap_bool.
           io_env->resolve(
@@ -903,12 +902,12 @@ CLASS zcl_mjs IMPLEMENTATION.
       lv_maprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
     ENDIF.
     IF ls_maobj-type = zif_mjs=>c_type_object.
-      ls_maobj-obj->set( iv_key = lv_maprop ir_val = zcl_mjs_val=>box_value( ls_maval ) ).
+      ls_maobj-obj->set( iv_key = lv_maprop is_val = ls_maval ).
     ELSEIF ls_maobj-type = zif_mjs=>c_type_function.
       IF ls_maobj-obj IS INITIAL.
         CREATE OBJECT ls_maobj-obj.
       ENDIF.
-      ls_maobj-obj->set( iv_key = lv_maprop ir_val = zcl_mjs_val=>box_value( ls_maval ) ).
+      ls_maobj-obj->set( iv_key = lv_maprop is_val = ls_maval ).
       FIELD-SYMBOLS <maon> TYPE zif_mjs=>ty_node.
       ASSIGN <n>-object->* TO <maon>.
       IF sy-subrc = 0 AND <maon>-kind = zif_mjs=>c_node_ident.
@@ -1031,36 +1030,33 @@ CLASS zcl_mjs IMPLEMENTATION.
 
     ELSEIF ls_iter-type = zif_mjs=>c_type_object AND ls_iter-obj IS BOUND AND ls_iter-obj->has( `[[SetData]]` ).
       " Mock for Map/Set iteration
-      DATA(lr_iter_data_ref) = ls_iter-obj->get( `[[SetData]]` ).
-      IF lr_iter_data_ref IS BOUND.
-        DATA(ls_iter_data_val) = zcl_mjs_val=>unbox_value( lr_iter_data_ref ).
-        IF ls_iter_data_val-type = zif_mjs=>c_type_array AND ls_iter_data_val-arr IS BOUND.
-          LOOP AT ls_iter_data_val-arr->items INTO DATA(lr_mi_item).
-            DATA(ls_mi_item_val) = zcl_mjs_val=>unbox_value( lr_mi_item ).
-            CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
-            lo_iter_env->output = io_env->output.
-            IF lv_of_pattern = abap_true.
-              bind_for_target( ir_left = <n>-left is_item = ls_mi_item_val io_env = lo_iter_env ).
-            ELSEIF lv_of_decl = abap_true.
-              lo_iter_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
-            ELSE.
-              io_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
-            ENDIF.
-            LOOP AT <n>-body INTO DATA(lr_mi_ofb).
-              eval_node( ir_node = lr_mi_ofb io_env = lo_iter_env ).
-              IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
-                EXIT.
-              ENDIF.
-            ENDLOOP.
-            IF lo_iter_env->continuing = abap_true.
-              lo_iter_env->continuing = abap_false.
-            ENDIF.
-            IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true.
-              lv_iter_return = lo_iter_env->returning.
+      DATA(ls_iter_data_val) = ls_iter-obj->get( `[[SetData]]` ).
+      IF ls_iter_data_val-type = zif_mjs=>c_type_array AND ls_iter_data_val-arr IS BOUND.
+        LOOP AT ls_iter_data_val-arr->items INTO DATA(lr_mi_item).
+          DATA(ls_mi_item_val) = zcl_mjs_val=>unbox_value( lr_mi_item ).
+          CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
+          lo_iter_env->output = io_env->output.
+          IF lv_of_pattern = abap_true.
+            bind_for_target( ir_left = <n>-left is_item = ls_mi_item_val io_env = lo_iter_env ).
+          ELSEIF lv_of_decl = abap_true.
+            lo_iter_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
+          ELSE.
+            io_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
+          ENDIF.
+          LOOP AT <n>-body INTO DATA(lr_mi_ofb).
+            eval_node( ir_node = lr_mi_ofb io_env = lo_iter_env ).
+            IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true OR lo_iter_env->continuing = abap_true.
               EXIT.
             ENDIF.
           ENDLOOP.
-        ENDIF.
+          IF lo_iter_env->continuing = abap_true.
+            lo_iter_env->continuing = abap_false.
+          ENDIF.
+          IF lo_iter_env->returning = abap_true OR lo_iter_env->breaking = abap_true.
+            lv_iter_return = lo_iter_env->returning.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
       ENDIF.
 
     ELSEIF ls_iter-type = zif_mjs=>c_type_string.
@@ -1218,13 +1214,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     IF <n>-str = `super`.
       DATA(ls_super_ctor_fn) = io_env->get( `__super_ctor__` ).
       IF ls_super_ctor_fn-type = zif_mjs=>c_type_function AND ls_super_ctor_fn-fn IS BOUND.
-        DATA(ls_cur_this) = io_env->get( `this` ).
-        DATA lr_super_this_ref TYPE REF TO data.
-        lr_super_this_ref = zcl_mjs_val=>box_value( ls_cur_this ).
+        " super ctor mutates the shared object reference — no writeback needed
         call_function( ir_fn = ls_super_ctor_fn-fn it_args = lt_call_args
-                       io_env = io_env ir_this = lr_super_this_ref ).
-        DATA(ls_updated_this) = zcl_mjs_val=>unbox_value( lr_super_this_ref ).
-        io_env->define( iv_name = `this` is_val = ls_updated_this ).
+                       io_env = io_env is_this = io_env->get_this( ) ).
       ENDIF.
       RETURN.
     ENDIF.
@@ -1320,8 +1312,6 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF ls_mcobj-type = zif_mjs=>c_type_object AND ls_mcobj-obj IS BOUND.
           DATA(ls_smval) = eval_property_access( is_obj = ls_mcobj iv_prop = <n>-property io_env = io_env ).
           IF ls_smval-type = zif_mjs=>c_type_function AND ls_smval-fn IS BOUND.
-            DATA lr_super_this TYPE REF TO data.
-            lr_super_this = zcl_mjs_val=>box_value( io_env->get( `this` ) ).
             DATA lt_s_args TYPE zif_mjs=>tt_value_slots.
             LOOP AT <n>-args INTO DATA(lr_sa).
               DATA(ls_sa_v) = eval_node( ir_node = lr_sa io_env = io_env ).
@@ -1335,9 +1325,8 @@ CLASS zcl_mjs IMPLEMENTATION.
                 APPEND ls_sa_v TO lt_s_args.
               ENDIF.
             ENDLOOP.
-            rs_val = call_function( ir_fn = ls_smval-fn it_args = lt_s_args io_env = io_env ir_this = lr_super_this ).
-            DATA(ls_upd_this) = zcl_mjs_val=>unbox_value( lr_super_this ).
-            io_env->set( iv_name = `this` is_val = ls_upd_this ).
+            rs_val = call_function( ir_fn = ls_smval-fn it_args = lt_s_args io_env = io_env
+                                    is_this = io_env->get_this( ) ).
             RETURN.
           ENDIF.
         ENDIF.
@@ -1370,11 +1359,10 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDLOOP.
 
     rs_val = eval_method_call(
-      is_obj      = ls_mcobj
-      iv_method   = lv_method
-      it_args     = lt_mc_args
-      io_env      = io_env
-      ir_obj_node = <n>-object ).
+      is_obj    = ls_mcobj
+      iv_method = lv_method
+      it_args   = lt_mc_args
+      io_env    = io_env ).
     RETURN.
   ENDMETHOD.
 
@@ -1499,7 +1487,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       DATA lr_oval TYPE REF TO data.
       READ TABLE <n>-args INDEX lv_oi + 1 INTO lr_oval.
       DATA(ls_oval) = eval_node( ir_node = lr_oval io_env = io_env ).
-      ls_obj-obj->set( iv_key = lv_okey_str ir_val = zcl_mjs_val=>box_value( ls_oval ) ).
+      ls_obj-obj->set( iv_key = lv_okey_str is_val = ls_oval ).
       lv_oi = lv_oi + 2.
     ENDWHILE.
     rs_val = ls_obj.
@@ -1573,6 +1561,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       ASSIGN <n>-left->* TO <to_n>.
       IF sy-subrc = 0 AND <to_n>-kind = zif_mjs=>c_node_ident
           AND <to_n>-slot_ok = abap_false
+          AND <to_n>-str <> `this`
           AND io_env->has( <to_n>-str ) = abap_false.
         rs_val = zcl_mjs_val=>string_val( `undefined` ).
         RETURN.
@@ -1645,23 +1634,16 @@ CLASS zcl_mjs IMPLEMENTATION.
       LOOP AT <n>-args INTO DATA(lr_na).
         APPEND eval_node( ir_node = lr_na io_env = io_env ) TO lt_new_args.
       ENDLOOP.
-      DATA lr_ctor TYPE REF TO data.
-      lr_ctor = ls_cls-obj->get( `constructor` ).
-      IF lr_ctor IS BOUND.
-        DATA(ls_ctor_val) = zcl_mjs_val=>unbox_value( lr_ctor ).
-        IF ls_ctor_val-type = zif_mjs=>c_type_function AND ls_ctor_val-fn IS BOUND.
-          DATA lr_inst_ref TYPE REF TO data.
-          lr_inst_ref = zcl_mjs_val=>box_value( ls_instance ).
-          call_function( ir_fn = ls_ctor_val-fn it_args = lt_new_args io_env = io_env
-                         ir_this = lr_inst_ref ).
-          ls_instance = zcl_mjs_val=>unbox_value( lr_inst_ref ).
-        ENDIF.
+      DATA(ls_ctor_val) = ls_cls-obj->get( `constructor` ).
+      IF ls_ctor_val-type = zif_mjs=>c_type_function AND ls_ctor_val-fn IS BOUND.
+        call_function( ir_fn = ls_ctor_val-fn it_args = lt_new_args io_env = io_env
+                       is_this = ls_instance ).
       ENDIF.
       " IMPORTANT: don't overwrite this.prop with class methods if we already set them in ctor
       LOOP AT ls_cls-obj->props ASSIGNING FIELD-SYMBOL(<cp>).
         IF <cp>-key <> `constructor`.
-          IF ls_instance-obj->get( <cp>-key ) IS INITIAL.
-            ls_instance-obj->set( iv_key = <cp>-key ir_val = <cp>-val ).
+          IF ls_instance-obj->has( <cp>-key ) = abap_false.
+            ls_instance-obj->set( iv_key = <cp>-key is_val = <cp>-val ).
           ENDIF.
         ENDIF.
       ENDLOOP.
@@ -1674,14 +1656,12 @@ CLASS zcl_mjs IMPLEMENTATION.
       LOOP AT <n>-args INTO DATA(lr_pa).
         APPEND eval_node( ir_node = lr_pa io_env = io_env ) TO lt_p_args.
       ENDLOOP.
-      DATA lr_p_inst_ref TYPE REF TO data.
-      lr_p_inst_ref = zcl_mjs_val=>box_value( ls_p_inst ).
       DATA(ls_p_ret) = call_function( ir_fn = ls_cls-fn it_args = lt_p_args io_env = io_env
-                                      ir_this = lr_p_inst_ref ).
+                                      is_this = ls_p_inst ).
       IF ls_p_ret-type = zif_mjs=>c_type_object AND ls_p_ret-obj IS BOUND.
         rs_val = ls_p_ret.
       ELSE.
-        rs_val = zcl_mjs_val=>unbox_value( lr_p_inst_ref ).
+        rs_val = ls_p_inst.
       ENDIF.
     ENDIF.
   ENDMETHOD.
@@ -1697,7 +1677,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       IF ls_super_cls-type = zif_mjs=>c_type_object AND ls_super_cls-obj IS BOUND.
         ls_clsobj-obj->proto = ls_super_cls-obj.
         LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
-          ls_clsobj-obj->set( iv_key = <sp>-key ir_val = <sp>-val ).
+          ls_clsobj-obj->set( iv_key = <sp>-key is_val = <sp>-val ).
         ENDLOOP.
         ls_super_cls_val = ls_super_cls.
       ENDIF.
@@ -1706,7 +1686,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       IF ls_super_expr-type = zif_mjs=>c_type_object AND ls_super_expr-obj IS BOUND.
         ls_clsobj-obj->proto = ls_super_expr-obj.
         LOOP AT ls_super_expr-obj->props ASSIGNING FIELD-SYMBOL(<sep>).
-          ls_clsobj-obj->set( iv_key = <sep>-key ir_val = <sep>-val ).
+          ls_clsobj-obj->set( iv_key = <sep>-key is_val = <sep>-val ).
         ENDLOOP.
         ls_super_cls_val = ls_super_expr.
       ENDIF.
@@ -1715,17 +1695,13 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lo_cls_env TYPE REF TO zcl_mjs_env.
     CREATE OBJECT lo_cls_env EXPORTING io_parent = io_env.
     IF ls_super_cls_val-type = zif_mjs=>c_type_object AND ls_super_cls_val-obj IS BOUND.
-      DATA lr_sc TYPE REF TO data.
-      lr_sc = ls_super_cls_val-obj->get( `constructor` ).
-      IF lr_sc IS BOUND.
-        DATA(ls_sc_val) = zcl_mjs_val=>unbox_value( lr_sc ).
-        IF ls_sc_val-type = zif_mjs=>c_type_function.
-          lo_cls_env->define( iv_name = `__super_ctor__` is_val = ls_sc_val ).
-        ENDIF.
+      DATA(ls_sc_val) = ls_super_cls_val-obj->get( `constructor` ).
+      IF ls_sc_val-type = zif_mjs=>c_type_function.
+        lo_cls_env->define( iv_name = `__super_ctor__` is_val = ls_sc_val ).
       ENDIF.
       lo_cls_env->define( iv_name = `__super_proto__` is_val = ls_super_cls_val ).
     ENDIF.
-    ls_clsobj-obj->set( iv_key = `__is_class__` ir_val = zcl_mjs_val=>box_value( zcl_mjs_val=>bool_val( abap_true ) ) ).
+    ls_clsobj-obj->set( iv_key = `__is_class__` is_val = zcl_mjs_val=>bool_val( abap_true ) ).
     LOOP AT <n>-methods INTO DATA(ls_cm).
       DATA lr_mfn TYPE REF TO data.
       CREATE DATA lr_mfn TYPE zif_mjs=>ty_function.
@@ -1741,7 +1717,7 @@ CLASS zcl_mjs IMPLEMENTATION.
       DATA ls_mfnval TYPE zif_mjs=>ty_value.
       ls_mfnval-type = zif_mjs=>c_type_function.
       ls_mfnval-fn   = lr_mfn.
-      ls_clsobj-obj->set( iv_key = ls_cm-name ir_val = zcl_mjs_val=>box_value( ls_mfnval ) ).
+      ls_clsobj-obj->set( iv_key = ls_cm-name is_val = ls_mfnval ).
     ENDLOOP.
     IF <n>-str IS NOT INITIAL.
       io_env->define( iv_name = <n>-str is_val = ls_clsobj ).
@@ -1801,15 +1777,10 @@ CLASS zcl_mjs IMPLEMENTATION.
   METHOD eval_property_access.
     CASE is_obj-type.
       WHEN zif_mjs=>c_type_object.
-        DATA lr_pv TYPE REF TO data.
-        lr_pv = is_obj-obj->get( iv_prop ).
-        IF lr_pv IS BOUND.
-          rs_val = zcl_mjs_val=>unbox_value( lr_pv ).
-          IF rs_val-type = zif_mjs=>c_type_getter AND io_env IS BOUND.
-            rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env ir_this = zcl_mjs_val=>box_value( is_obj ) ).
-          ENDIF.
-        ELSE.
-          rs_val = zcl_mjs_val=>undefined_val( ).
+        " missing keys read back as undefined (type 0 = initial rs_val)
+        rs_val = is_obj-obj->get( iv_prop ).
+        IF rs_val-type = zif_mjs=>c_type_getter AND io_env IS BOUND.
+          rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env is_this = is_obj ).
         ENDIF.
       WHEN zif_mjs=>c_type_array.
         IF iv_prop = `length`.
@@ -1860,13 +1831,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDLOOP.
           rs_val = zcl_mjs_val=>number_val( CONV f( lv_fn_length ) ).
         ELSEIF is_obj-obj IS BOUND.
-          DATA lr_fn4_pv TYPE REF TO data.
-          lr_fn4_pv = is_obj-obj->get( iv_prop ).
-          IF lr_fn4_pv IS BOUND.
-            rs_val = zcl_mjs_val=>unbox_value( lr_fn4_pv ).
-            RETURN.
-          ENDIF.
-          rs_val = zcl_mjs_val=>undefined_val( ).
+          rs_val = is_obj-obj->get( iv_prop ).
         ELSE.
           rs_val = zcl_mjs_val=>undefined_val( ).
         ENDIF.
@@ -1880,20 +1845,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method io_env = io_env ).
 
     IF ls_mval-type = zif_mjs=>c_type_function AND ls_mval-fn IS BOUND.
-      DATA lr_this TYPE REF TO data.
-      lr_this = zcl_mjs_val=>box_value( is_obj ).
+      " receiver mutations flow through the shared object reference — no writeback
       rs_val = call_function( ir_fn = ls_mval-fn it_args = it_args io_env = io_env
-                              ir_this = lr_this ).
-      DATA(ls_updated) = zcl_mjs_val=>unbox_value( lr_this ).
-      IF ir_obj_node IS BOUND.
-        FIELD-SYMBOLS <on> TYPE zif_mjs=>ty_node.
-        ASSIGN ir_obj_node->* TO <on>.
-        IF sy-subrc = 0 AND <on>-kind = zif_mjs=>c_node_ident.
-          io_env->set( iv_name = <on>-str is_val = ls_updated ).
-        ENDIF.
-      ENDIF.
-      " Also update the object reference in the caller's context if possible
-      " But for built-ins, we mainly care about updating 'this' if the method was called on 'this'
+                              is_this = is_obj ).
       RETURN.
     ENDIF.
 
@@ -1906,35 +1860,23 @@ CLASS zcl_mjs IMPLEMENTATION.
         ENDIF.
 
       WHEN zif_mjs=>c_type_array.
+        " mutating methods (push etc.) change arr->items through the shared
+        " array reference — no writeback to the receiver variable needed
         rs_val = zcl_mjs_arr_methods=>call_method(
           is_obj    = is_obj
           iv_method = iv_method
           it_args   = it_args
           io_env    = io_env ).
-        " push mutates: write the array back if it was called on a plain variable
-        IF iv_method = `push` AND ir_obj_node IS BOUND.
-          FIELD-SYMBOLS <on_obj> TYPE zif_mjs=>ty_node.
-          ASSIGN ir_obj_node->* TO <on_obj>.
-          IF sy-subrc = 0 AND <on_obj>-kind = zif_mjs=>c_node_ident.
-            io_env->set( iv_name = <on_obj>-str is_val = is_obj ).
-          ENDIF.
-        ENDIF.
         RETURN.
       WHEN zif_mjs=>c_type_string.
         rs_val = zcl_mjs_string=>call_method( is_obj = is_obj iv_method = iv_method it_args = it_args ).
       WHEN zif_mjs=>c_type_function.
         IF is_obj-obj IS BOUND.
-          DATA lr_fn4_meth TYPE REF TO data.
-          lr_fn4_meth = is_obj-obj->get( iv_method ).
-          IF lr_fn4_meth IS BOUND.
-            DATA(ls_fn4_mval) = zcl_mjs_val=>unbox_value( lr_fn4_meth ).
-            IF ls_fn4_mval-type = zif_mjs=>c_type_function AND ls_fn4_mval-fn IS BOUND.
-              DATA lr_fn4_this TYPE REF TO data.
-              lr_fn4_this = zcl_mjs_val=>box_value( is_obj ).
-              rs_val = call_function( ir_fn = ls_fn4_mval-fn it_args = it_args io_env = io_env
-                                      ir_this = lr_fn4_this ).
-              RETURN.
-            ENDIF.
+          DATA(ls_fn4_mval) = is_obj-obj->get( iv_method ).
+          IF ls_fn4_mval-type = zif_mjs=>c_type_function AND ls_fn4_mval-fn IS BOUND.
+            rs_val = call_function( ir_fn = ls_fn4_mval-fn it_args = it_args io_env = io_env
+                                    is_this = is_obj ).
+            RETURN.
           ENDIF.
         ENDIF.
         CASE iv_method.
