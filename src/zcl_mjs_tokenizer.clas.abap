@@ -13,6 +13,12 @@ CLASS zcl_mjs_tokenizer DEFINITION PUBLIC.
     CLASS-DATA gv_nul        TYPE c LENGTH 1.  " \0 U+0000
     CLASS-DATA gv_linterm_ls TYPE c LENGTH 1.  " U+2028 LINE SEPARATOR
     CLASS-DATA gv_linterm_ps TYPE c LENGTH 1.  " U+2029 PARAGRAPH SEPARATOR
+    " Character sets for span scanning with CA/CN + sy-fdpos
+    CLASS-DATA gv_ws_chars     TYPE string.  " whitespace
+    CLASS-DATA gv_ident_chars  TYPE string.  " identifier continuation
+    CLASS-DATA gv_num_chars    TYPE string.  " digits + decimal point
+    CLASS-DATA gv_digit_chars  TYPE string.  " digits
+    CLASS-DATA gv_rxterm_chars TYPE string.  " chars that steer a regex scan
 ENDCLASS.
 
 
@@ -29,6 +35,12 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
         gv_linterm_ps = cl_abap_conv_in_ce=>uccpi( 8233 ).
       CATCH cx_sy_conversion_codepage.
     ENDTRY.
+    " leading literal space + tab + LF + CR
+    gv_ws_chars = | { cl_abap_char_utilities=>horizontal_tab }{ cl_abap_char_utilities=>newline }{ gv_cr }|.
+    gv_ident_chars  = `_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+    gv_num_chars    = `0123456789.`.
+    gv_digit_chars  = `0123456789`.
+    gv_rxterm_chars = `/[]\`.
   ENDMETHOD.
 
   METHOD tokenize.
@@ -59,8 +71,10 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_esc_cp   TYPE i.
     DATA lv_xh       TYPE i.
     DATA lv_idlen TYPE i.
-    DATA lv_ic TYPE c LENGTH 1.
     DATA lv_sc TYPE c LENGTH 1.
+    DATA lv_window TYPE string.
+    DATA lv_wlen   TYPE i.
+    DATA lv_term   TYPE string.
     DATA lv_has_non_octal TYPE abap_bool.
     DATA lv_rxis    TYPE abap_bool.
     DATA lv_nptok   TYPE i.
@@ -102,15 +116,20 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
 
-      " Whitespace: consume the whole run in a tight loop
+      " Whitespace: consume the whole run via span scan
       IF lv_ch = lv_sp OR lv_ch = lv_tab OR lv_ch = lv_lf OR lv_ch = lv_cr.
         lv_i = lv_i + 1.
         WHILE lv_i < lv_len.
-          lv_ch = iv_src+lv_i(1).
-          IF lv_ch = lv_sp OR lv_ch = lv_tab OR lv_ch = lv_lf OR lv_ch = lv_cr.
-            lv_i = lv_i + 1.
-          ELSE.
+          lv_wlen = lv_len - lv_i.
+          IF lv_wlen > 64.
+            lv_wlen = 64.
+          ENDIF.
+          lv_window = iv_src+lv_i(lv_wlen).
+          IF lv_window CN gv_ws_chars.
+            lv_i = lv_i + sy-fdpos.
             EXIT.
+          ELSE.
+            lv_i = lv_i + lv_wlen.
           ENDIF.
         ENDWHILE.
         CONTINUE.
@@ -121,13 +140,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                         OR ( lv_ch >= lv_cua AND lv_ch <= lv_cuz ).
         lv_j = lv_i + 1.
         WHILE lv_j < lv_len.
-          lv_ic = iv_src+lv_j(1).
-          IF lv_ic = lv_cus OR ( lv_ic >= lv_ca AND lv_ic <= lv_cz )
-                            OR ( lv_ic >= lv_cua AND lv_ic <= lv_cuz )
-                            OR ( lv_ic >= lv_c0 AND lv_ic <= lv_c9 ).
-            lv_j = lv_j + 1.
-          ELSE.
+          lv_wlen = lv_len - lv_j.
+          IF lv_wlen > 64.
+            lv_wlen = 64.
+          ENDIF.
+          lv_window = iv_src+lv_j(lv_wlen).
+          IF lv_window CN gv_ident_chars.
+            lv_j = lv_j + sy-fdpos.
             EXIT.
+          ELSE.
+            lv_j = lv_j + lv_wlen.
           ENDIF.
         ENDWHILE.
         lv_idlen = lv_j - lv_i.
@@ -257,11 +279,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
         " Decimal + optional scientific exponent
         lv_j = lv_i.
         WHILE lv_j < lv_len.
-          lv_d = iv_src+lv_j(1).
-          IF ( lv_d >= lv_c0 AND lv_d <= lv_c9 ) OR lv_d = lv_dot.
-            lv_j = lv_j + 1.
-          ELSE.
+          lv_wlen = lv_len - lv_j.
+          IF lv_wlen > 64.
+            lv_wlen = 64.
+          ENDIF.
+          lv_window = iv_src+lv_j(lv_wlen).
+          IF lv_window CN gv_num_chars.
+            lv_j = lv_j + sy-fdpos.
             EXIT.
+          ELSE.
+            lv_j = lv_j + lv_wlen.
           ENDIF.
         ENDWHILE.
         IF lv_j < lv_len.
@@ -275,11 +302,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               ENDIF.
             ENDIF.
             WHILE lv_j < lv_len.
-              lv_d = iv_src+lv_j(1).
-              IF lv_d >= lv_c0 AND lv_d <= lv_c9.
-                lv_j = lv_j + 1.
-              ELSE.
+              lv_wlen = lv_len - lv_j.
+              IF lv_wlen > 64.
+                lv_wlen = 64.
+              ENDIF.
+              lv_window = iv_src+lv_j(lv_wlen).
+              IF lv_window CN gv_digit_chars.
+                lv_j = lv_j + sy-fdpos.
                 EXIT.
+              ELSE.
+                lv_j = lv_j + lv_wlen.
               ENDIF.
             ENDWHILE.
           ENDIF.
@@ -295,10 +327,23 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
       " String (single-quote, double-quote, or backtick template literal)
       IF lv_ch = lv_sq OR lv_ch = lv_dq OR lv_ch = lv_bt.
         lv_quote = lv_ch.
+        lv_term = lv_quote && lv_bsl.
         lv_j = lv_i + 1.
         lv_chunk_start = lv_j.
         CLEAR lv_sbuf.
         WHILE lv_j < lv_len.
+          " Jump to the next quote or backslash
+          lv_wlen = lv_len - lv_j.
+          IF lv_wlen > 256.
+            lv_wlen = 256.
+          ENDIF.
+          lv_window = iv_src+lv_j(lv_wlen).
+          IF lv_window CA lv_term.
+            lv_j = lv_j + sy-fdpos.
+          ELSE.
+            lv_j = lv_j + lv_wlen.
+            CONTINUE.
+          ENDIF.
           lv_sc = iv_src+lv_j(1).
           IF lv_sc = lv_quote.
             lv_chunk_len = lv_j - lv_chunk_start.
@@ -307,7 +352,8 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             ENDIF.
             EXIT.
           ENDIF.
-          IF lv_sc = lv_bsl AND lv_j + 1 < lv_len.
+          " Backslash escape
+          IF lv_j + 1 < lv_len.
             lv_chunk_len = lv_j - lv_chunk_start.
             IF lv_chunk_len > 0.
               lv_sbuf = lv_sbuf && iv_src+lv_chunk_start(lv_chunk_len).
@@ -583,11 +629,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             " Dot-prefixed number: .5, .0e1
             lv_j = lv_i.
             WHILE lv_j < lv_len.
-              lv_d = iv_src+lv_j(1).
-              IF ( lv_d >= lv_c0 AND lv_d <= lv_c9 ) OR lv_d = lv_dot.
-                lv_j = lv_j + 1.
-              ELSE.
+              lv_wlen = lv_len - lv_j.
+              IF lv_wlen > 64.
+                lv_wlen = 64.
+              ENDIF.
+              lv_window = iv_src+lv_j(lv_wlen).
+              IF lv_window CN gv_num_chars.
+                lv_j = lv_j + sy-fdpos.
                 EXIT.
+              ELSE.
+                lv_j = lv_j + lv_wlen.
               ENDIF.
             ENDWHILE.
             IF lv_j < lv_len.
@@ -601,11 +652,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                   ENDIF.
                 ENDIF.
                 WHILE lv_j < lv_len.
-                  lv_d = iv_src+lv_j(1).
-                  IF lv_d >= lv_c0 AND lv_d <= lv_c9.
-                    lv_j = lv_j + 1.
-                  ELSE.
+                  lv_wlen = lv_len - lv_j.
+                  IF lv_wlen > 64.
+                    lv_wlen = 64.
+                  ENDIF.
+                  lv_window = iv_src+lv_j(lv_wlen).
+                  IF lv_window CN gv_digit_chars.
+                    lv_j = lv_j + sy-fdpos.
                     EXIT.
+                  ELSE.
+                    lv_j = lv_j + lv_wlen.
                   ENDIF.
                 ENDWHILE.
               ENDIF.
@@ -631,24 +687,39 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               " Line comment: skip to end of line
               lv_i = lv_i + 2.
               WHILE lv_i < lv_len.
-                IF iv_src+lv_i(1) = lv_lf.
-                  EXIT.
+                lv_wlen = lv_len - lv_i.
+                IF lv_wlen > 256.
+                  lv_wlen = 256.
                 ENDIF.
-                lv_i = lv_i + 1.
+                lv_window = iv_src+lv_i(lv_wlen).
+                IF lv_window CA lv_lf.
+                  lv_i = lv_i + sy-fdpos.
+                  EXIT.
+                ELSE.
+                  lv_i = lv_i + lv_wlen.
+                ENDIF.
               ENDWHILE.
               CONTINUE.
             ELSEIF lv_nc = lv_star.
               " Block comment: skip to */
               lv_j = lv_i + 2.
               WHILE lv_j < lv_len.
-                IF iv_src+lv_j(1) = lv_star.
+                lv_wlen = lv_len - lv_j.
+                IF lv_wlen > 256.
+                  lv_wlen = 256.
+                ENDIF.
+                lv_window = iv_src+lv_j(lv_wlen).
+                IF lv_window CA lv_star.
+                  lv_j = lv_j + sy-fdpos.
                   lv_ni = lv_j + 1.
                   IF lv_ni < lv_len AND iv_src+lv_ni(1) = lv_slash.
                     lv_j = lv_ni + 1.
                     EXIT.
                   ENDIF.
+                  lv_j = lv_j + 1.
+                ELSE.
+                  lv_j = lv_j + lv_wlen.
                 ENDIF.
-                lv_j = lv_j + 1.
               ENDWHILE.
               lv_i = lv_j.
               CONTINUE.
@@ -678,30 +749,45 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             ENDIF.
           ENDIF.
           IF lv_rxis = abap_true.
-            CLEAR lv_rxpat.
-            CLEAR lv_rxflg.
             lv_rxclass = abap_false.
             lv_j = lv_i + 1.
             WHILE lv_j < lv_len.
+              " Jump to the next /, [, ] or backslash
+              lv_wlen = lv_len - lv_j.
+              IF lv_wlen > 256.
+                lv_wlen = 256.
+              ENDIF.
+              lv_window = iv_src+lv_j(lv_wlen).
+              IF lv_window CA gv_rxterm_chars.
+                lv_j = lv_j + sy-fdpos.
+              ELSE.
+                lv_j = lv_j + lv_wlen.
+                CONTINUE.
+              ENDIF.
               lv_rxch = iv_src+lv_j(1).
               IF lv_rxch = lv_slash AND lv_rxclass = abap_false.
                 EXIT.
               ENDIF.
-              IF lv_rxch = `[` AND lv_rxclass = abap_false.
-                lv_rxclass = abap_true.
-              ELSEIF lv_rxch = `]` AND lv_rxclass = abap_true.
-                lv_rxclass = abap_false.
-              ENDIF.
               IF lv_rxch = lv_bsl AND lv_j + 1 < lv_len.
-                lv_rxpat = lv_rxpat && lv_bsl.
-                lv_j = lv_j + 1.
-                lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+                lv_j = lv_j + 2.
               ELSE.
-                lv_rxpat = lv_rxpat && iv_src+lv_j(1).
+                IF lv_rxch = `[` AND lv_rxclass = abap_false.
+                  lv_rxclass = abap_true.
+                ELSEIF lv_rxch = `]` AND lv_rxclass = abap_true.
+                  lv_rxclass = abap_false.
+                ENDIF.
+                lv_j = lv_j + 1.
               ENDIF.
-              lv_j = lv_j + 1.
             ENDWHILE.
             IF lv_j < lv_len.
+              " Pattern is the unmodified source span between the slashes
+              lv_ni = lv_i + 1.
+              lv_numlen = lv_j - lv_ni.
+              CLEAR lv_rxpat.
+              IF lv_numlen > 0.
+                lv_rxpat = iv_src+lv_ni(lv_numlen).
+              ENDIF.
+              CLEAR lv_rxflg.
               lv_j = lv_j + 1.  " skip closing /
               WHILE lv_j < lv_len.
                 lv_rxfc = iv_src+lv_j(1).
