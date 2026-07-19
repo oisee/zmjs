@@ -1,12 +1,35 @@
 CLASS zcl_mjs_tokenizer DEFINITION PUBLIC.
   PUBLIC SECTION.
+    CLASS-METHODS class_constructor.
     CLASS-METHODS tokenize
       IMPORTING iv_src           TYPE string
       RETURNING VALUE(rt_tokens) TYPE zif_mjs=>tt_tokens.
+  PRIVATE SECTION.
+    " Escape characters and Unicode line terminators, built once
+    CLASS-DATA gv_cr         TYPE c LENGTH 1.  " \r U+000D
+    CLASS-DATA gv_backspace  TYPE c LENGTH 1.  " \b U+0008
+    CLASS-DATA gv_vtab       TYPE c LENGTH 1.  " \v U+000B
+    CLASS-DATA gv_formfeed   TYPE c LENGTH 1.  " \f U+000C
+    CLASS-DATA gv_nul        TYPE c LENGTH 1.  " \0 U+0000
+    CLASS-DATA gv_linterm_ls TYPE c LENGTH 1.  " U+2028 LINE SEPARATOR
+    CLASS-DATA gv_linterm_ps TYPE c LENGTH 1.  " U+2029 PARAGRAPH SEPARATOR
 ENDCLASS.
 
 
 CLASS zcl_mjs_tokenizer IMPLEMENTATION.
+
+  METHOD class_constructor.
+    gv_cr = cl_abap_char_utilities=>cr_lf(1).
+    TRY.
+        gv_backspace  = cl_abap_conv_in_ce=>uccpi( 8 ).
+        gv_vtab       = cl_abap_conv_in_ce=>uccpi( 11 ).
+        gv_formfeed   = cl_abap_conv_in_ce=>uccpi( 12 ).
+        gv_nul        = cl_abap_conv_in_ce=>uccpi( 0 ).
+        gv_linterm_ls = cl_abap_conv_in_ce=>uccpi( 8232 ).
+        gv_linterm_ps = cl_abap_conv_in_ce=>uccpi( 8233 ).
+      CATCH cx_sy_conversion_codepage.
+    ENDTRY.
+  ENDMETHOD.
 
   METHOD tokenize.
     DATA lv_i   TYPE i VALUE 0.
@@ -32,41 +55,17 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
     DATA lv_chunk_len   TYPE i.
     DATA lv_esc TYPE c LENGTH 1.
     DATA lv_esc_cp   TYPE i.
-    DATA lv_esc_xb   TYPE x LENGTH 1.
-    DATA lv_esc_xs   TYPE xstring.
     DATA lv_xh       TYPE i.
-    DATA lv_ub1   TYPE x LENGTH 1.
-    DATA lv_ub2   TYPE x LENGTH 1.
-    DATA lv_ub3   TYPE x LENGTH 1.
-    DATA lv_utf8x TYPE xstring.
     DATA lv_ndot TYPE c LENGTH 1.
     DATA lv_two TYPE string.
     DATA lv_three TYPE string.
     DATA lv_idlen TYPE i.
     DATA lv_ic TYPE c LENGTH 1.
     DATA lv_sc TYPE c LENGTH 1.
-    DATA lv_linterm_ls TYPE c LENGTH 1.
-    DATA lv_linterm_ps TYPE c LENGTH 1.
-    DATA lv_ls_bytes   TYPE xstring.
 
     lv_bt = |`|.
     lv_len = strlen( iv_src ).
     lv_hexdig = `0123456789abcdef`.
-    " Build U+2028 (LS) and U+2029 (PS) for line-continuation detection
-    lv_ub1 = 226.
-    lv_ub2 = 128.
-    lv_ub3 = 168.
-    CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_ls_bytes IN BYTE MODE.
-    TRY.
-        lv_linterm_ls = cl_abap_codepage=>convert_from( source = lv_ls_bytes ).
-      CATCH cx_sy_conversion_codepage.
-    ENDTRY.
-    lv_ub3 = 169.
-    CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_ls_bytes IN BYTE MODE.
-    TRY.
-        lv_linterm_ps = cl_abap_codepage=>convert_from( source = lv_ls_bytes ).
-      CATCH cx_sy_conversion_codepage.
-    ENDTRY.
 
     WHILE lv_i < lv_len.
       lv_ch = iv_src+lv_i(1).
@@ -283,41 +282,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
               WHEN `t`.
                 lv_sbuf = lv_sbuf && cl_abap_char_utilities=>horizontal_tab.
               WHEN `r`.  " CR = 0x0D
-                lv_esc_xb = 13.
-                lv_esc_xs = lv_esc_xb.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
+                lv_sbuf = lv_sbuf && gv_cr.
               WHEN `b`.  " backspace = 0x08
-                lv_esc_xb = 8.
-                lv_esc_xs = lv_esc_xb.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
+                lv_sbuf = lv_sbuf && gv_backspace.
               WHEN `f`.  " form feed = 0x0C
-                lv_esc_xb = 12.
-                lv_esc_xs = lv_esc_xb.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
+                lv_sbuf = lv_sbuf && gv_formfeed.
               WHEN `v`.  " vertical tab = 0x0B
-                lv_esc_xb = 11.
-                lv_esc_xs = lv_esc_xb.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
+                lv_sbuf = lv_sbuf && gv_vtab.
               WHEN `0`.  " null = 0x00
-                lv_esc_xb = 0.
-                lv_esc_xs = lv_esc_xb.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_esc_xs ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
-              WHEN `x`.  " \xNN - 2 hex digits (0x00-0xFF, build proper UTF-8)
+                lv_sbuf = lv_sbuf && gv_nul.
+              WHEN `x`.  " \xNN - 2 hex digits (0x00-0xFF)
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 2 TIMES.
@@ -328,19 +302,16 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                   lv_xh = lv_xh + 1.
                 ENDDO.
                 lv_j = lv_j + 2.
-                IF lv_esc_cp < 128.
-                  lv_ub1 = lv_esc_cp.
-                  lv_utf8x = lv_ub1.
+                IF lv_esc_cp = 32.
+                  " uccpi returns fixed-length char, && would trim a trailing blank
+                  lv_sbuf = lv_sbuf && ` `.
                 ELSE.
-                  lv_ub1 = 192 + lv_esc_cp DIV 64.
-                  lv_ub2 = 128 + lv_esc_cp MOD 64.
-                  CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
+                  TRY.
+                      lv_sbuf = lv_sbuf && cl_abap_conv_in_ce=>uccpi( lv_esc_cp ).
+                    CATCH cx_sy_conversion_codepage.
+                  ENDTRY.
                 ENDIF.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_utf8x ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
-              WHEN `u`.  " \uNNNN - 4 hex digits, BMP (U+0000-U+FFFF), build proper UTF-8
+              WHEN `u`.  " \uNNNN - 4 hex digits, BMP (U+0000-U+FFFF)
                 lv_esc_cp = 0.
                 lv_xh = lv_j + 1.
                 DO 4 TIMES.
@@ -351,23 +322,15 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                   lv_xh = lv_xh + 1.
                 ENDDO.
                 lv_j = lv_j + 4.
-                IF lv_esc_cp < 128.
-                  lv_ub1 = lv_esc_cp.
-                  lv_utf8x = lv_ub1.
-                ELSEIF lv_esc_cp < 2048.
-                  lv_ub1 = 192 + lv_esc_cp DIV 64.
-                  lv_ub2 = 128 + lv_esc_cp MOD 64.
-                  CONCATENATE lv_ub1 lv_ub2 INTO lv_utf8x IN BYTE MODE.
+                IF lv_esc_cp = 32.
+                  " uccpi returns fixed-length char, && would trim a trailing blank
+                  lv_sbuf = lv_sbuf && ` `.
                 ELSE.
-                  lv_ub1 = 224 + lv_esc_cp DIV 4096.
-                  lv_ub2 = 128 + ( lv_esc_cp DIV 64 ) MOD 64.
-                  lv_ub3 = 128 + lv_esc_cp MOD 64.
-                  CONCATENATE lv_ub1 lv_ub2 lv_ub3 INTO lv_utf8x IN BYTE MODE.
+                  TRY.
+                      lv_sbuf = lv_sbuf && cl_abap_conv_in_ce=>uccpi( lv_esc_cp ).
+                    CATCH cx_sy_conversion_codepage.
+                  ENDTRY.
                 ENDIF.
-                TRY.
-                    lv_sbuf = lv_sbuf && cl_abap_codepage=>convert_from( source = lv_utf8x ).
-                  CATCH cx_sy_conversion_codepage.
-                ENDTRY.
               WHEN `\`.
                 lv_sbuf = lv_sbuf && `\`.
               WHEN `'`.
@@ -384,9 +347,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
                     lv_j = lv_ni.
                   ENDIF.
                 ENDIF.
-              WHEN lv_linterm_ls.                     " \<U+2028> line continuation
+              WHEN gv_linterm_ls.                     " \<U+2028> line continuation
                 " skip – produce nothing
-              WHEN lv_linterm_ps.                     " \<U+2029> line continuation
+              WHEN gv_linterm_ps.                     " \<U+2029> line continuation
                 " skip – produce nothing
               WHEN OTHERS.
                 lv_sbuf = lv_sbuf && lv_esc.
@@ -565,9 +528,9 @@ CLASS zcl_mjs_tokenizer IMPLEMENTATION.
             IF lv_rxch = `\` AND lv_j + 1 < lv_len.
               lv_rxpat = lv_rxpat && `\`.
               lv_j = lv_j + 1.
-              lv_rxpat = lv_rxpat && substring( val = iv_src off = lv_j len = 1 ).
+              lv_rxpat = lv_rxpat && iv_src+lv_j(1).
             ELSE.
-              lv_rxpat = lv_rxpat && substring( val = iv_src off = lv_j len = 1 ).
+              lv_rxpat = lv_rxpat && iv_src+lv_j(1).
             ENDIF.
             lv_j = lv_j + 1.
           ENDWHILE.
