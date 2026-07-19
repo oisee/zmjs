@@ -12622,7 +12622,13 @@ var StatementParser = class _StatementParser {
 // src/index.ts
 function main(filename, code) {
   console.log("Running statement parser...");
-  new StatementParser("v750" /* v750 */);
+  var file = new MemoryFile(filename, code);
+  var lexer = new Lexer();
+  var lexerResult = lexer.run(file);
+  console.log("Tokens: " + lexerResult.tokens.length);
+  var parser = new StatementParser("v750" /* v750 */);
+  var result = parser.run([lexerResult], []);
+  console.log("Statements: " + result[0].statements.length);
 }
 main("test.prog.abap", "WRITE 'Hello World'.");
 console.log("Done");

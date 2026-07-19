@@ -1,6 +1,7 @@
-REPORT zmjs_abaplint.
+REPORT zmjs_abaplint_zabapgit.
 
 * Generated from perf/benchmarks/abaplint.js.
+* Input source: report ZABAPGIT_STANDALONE, read at runtime via READ REPORT.
 START-OF-SELECTION.
   DATA lt_js TYPE STANDARD TABLE OF string WITH EMPTY KEY.
   APPEND `/*eslint-disable*/` TO lt_js.
@@ -12645,210 +12646,17 @@ START-OF-SELECTION.
   APPEND `  var result = parser.run([lexerResult], []);` TO lt_js.
   APPEND `  console.log("Statements: " + result[0].statements.length);` TO lt_js.
   APPEND `}` TO lt_js.
+  " Read the ABAP source of report ZABAPGIT_STANDALONE and feed it to the parser.
+  DATA lt_abap TYPE STANDARD TABLE OF string.
+  READ REPORT 'ZABAPGIT_STANDALONE' INTO lt_abap.
   APPEND `var abapSource = [` TO lt_js.
-  APPEND `"REPORT zdemo_abaplint.",` TO lt_js.
-  APPEND `"* Demo report used to exercise the abaplint statement parser.",` TO lt_js.
-  APPEND `"* It is not meant to be executed, only parsed.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"TYPES: BEGIN OF ty_item,",` TO lt_js.
-  APPEND `"         id       TYPE i,",` TO lt_js.
-  APPEND `"         name     TYPE string,",` TO lt_js.
-  APPEND `"         category TYPE c LENGTH 4,",` TO lt_js.
-  APPEND `"         price    TYPE p LENGTH 8 DECIMALS 2,",` TO lt_js.
-  APPEND `"         active   TYPE abap_bool,",` TO lt_js.
-  APPEND `"       END OF ty_item.",` TO lt_js.
-  APPEND `"TYPES ty_items TYPE STANDARD TABLE OF ty_item WITH DEFAULT KEY.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"CONSTANTS gc_max_items TYPE i VALUE 100.",` TO lt_js.
-  APPEND `"CONSTANTS gc_currency  TYPE string VALUE 'EUR'.",` TO lt_js.
-  APPEND `"CONSTANTS gc_vat_rate  TYPE p LENGTH 4 DECIMALS 2 VALUE '0.19'.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"DATA gt_items  TYPE ty_items.",` TO lt_js.
-  APPEND `"DATA gv_total  TYPE p LENGTH 12 DECIMALS 2.",` TO lt_js.
-  APPEND `"DATA gv_count  TYPE i.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"INTERFACE lif_pricing.",` TO lt_js.
-  APPEND `"  METHODS gross_price",` TO lt_js.
-  APPEND `"    IMPORTING iv_net         TYPE p",` TO lt_js.
-  APPEND `"    RETURNING VALUE(rv_gross) TYPE p.",` TO lt_js.
-  APPEND `"  METHODS describe",` TO lt_js.
-  APPEND `"    RETURNING VALUE(rv_text) TYPE string.",` TO lt_js.
-  APPEND `"ENDINTERFACE.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"CLASS lcl_catalog DEFINITION.",` TO lt_js.
-  APPEND `"  PUBLIC SECTION.",` TO lt_js.
-  APPEND `"    INTERFACES lif_pricing.",` TO lt_js.
-  APPEND `"    METHODS constructor",` TO lt_js.
-  APPEND `"      IMPORTING iv_name TYPE string.",` TO lt_js.
-  APPEND `"    METHODS add_item",` TO lt_js.
-  APPEND `"      IMPORTING is_item TYPE ty_item.",` TO lt_js.
-  APPEND `"    METHODS count_active",` TO lt_js.
-  APPEND `"      RETURNING VALUE(rv_count) TYPE i.",` TO lt_js.
-  APPEND `"    METHODS total_price",` TO lt_js.
-  APPEND `"      RETURNING VALUE(rv_total) TYPE p.",` TO lt_js.
-  APPEND `"    METHODS find_by_id",` TO lt_js.
-  APPEND `"      IMPORTING iv_id         TYPE i",` TO lt_js.
-  APPEND `"      RETURNING VALUE(rs_item) TYPE ty_item.",` TO lt_js.
-  APPEND `"    CLASS-METHODS create",` TO lt_js.
-  APPEND `"      IMPORTING iv_name        TYPE string",` TO lt_js.
-  APPEND `"      RETURNING VALUE(ro_cat)  TYPE REF TO lcl_catalog.",` TO lt_js.
-  APPEND `"  PROTECTED SECTION.",` TO lt_js.
-  APPEND `"    DATA mv_name  TYPE string.",` TO lt_js.
-  APPEND `"    DATA mt_items TYPE ty_items.",` TO lt_js.
-  APPEND `"  PRIVATE SECTION.",` TO lt_js.
-  APPEND `"    METHODS log",` TO lt_js.
-  APPEND `"      IMPORTING iv_message TYPE string.",` TO lt_js.
-  APPEND `"ENDCLASS.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"CLASS lcl_catalog IMPLEMENTATION.",` TO lt_js.
-  APPEND `"  METHOD constructor.",` TO lt_js.
-  APPEND `"    mv_name = iv_name.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD create.",` TO lt_js.
-  APPEND `"    ro_cat = NEW lcl_catalog( iv_name ).",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD add_item.",` TO lt_js.
-  APPEND `"    IF lines( mt_items ) >= gc_max_items.",` TO lt_js.
-  APPEND `"      log( |Catalog full, skipping { is_item-name }| ).",` TO lt_js.
-  APPEND `"      RETURN.",` TO lt_js.
-  APPEND `"    ENDIF.",` TO lt_js.
-  APPEND `"    APPEND is_item TO mt_items.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD count_active.",` TO lt_js.
-  APPEND `"    LOOP AT mt_items INTO DATA(ls_item) WHERE active = abap_true.",` TO lt_js.
-  APPEND `"      rv_count = rv_count + 1.",` TO lt_js.
-  APPEND `"    ENDLOOP.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD total_price.",` TO lt_js.
-  APPEND `"    DATA lv_sum TYPE p LENGTH 12 DECIMALS 2.",` TO lt_js.
-  APPEND `"    LOOP AT mt_items INTO DATA(ls_item).",` TO lt_js.
-  APPEND `"      lv_sum = lv_sum + ls_item-price.",` TO lt_js.
-  APPEND `"    ENDLOOP.",` TO lt_js.
-  APPEND `"    rv_total = lv_sum.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD find_by_id.",` TO lt_js.
-  APPEND `"    READ TABLE mt_items INTO rs_item WITH KEY id = iv_id.",` TO lt_js.
-  APPEND `"    IF sy-subrc <> 0.",` TO lt_js.
-  APPEND `"      CLEAR rs_item.",` TO lt_js.
-  APPEND `"    ENDIF.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD lif_pricing~gross_price.",` TO lt_js.
-  APPEND `"    rv_gross = iv_net * ( 1 + gc_vat_rate ).",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD lif_pricing~describe.",` TO lt_js.
-  APPEND `"    rv_text = |Catalog { mv_name } with { lines( mt_items ) } items|.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD log.",` TO lt_js.
-  APPEND `"    WRITE: / |[LOG] { iv_message }|.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"ENDCLASS.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"CLASS lcl_app DEFINITION.",` TO lt_js.
-  APPEND `"  PUBLIC SECTION.",` TO lt_js.
-  APPEND `"    CLASS-METHODS run.",` TO lt_js.
-  APPEND `"  PRIVATE SECTION.",` TO lt_js.
-  APPEND `"    CLASS-METHODS build_demo_data",` TO lt_js.
-  APPEND `"      RETURNING VALUE(ro_cat) TYPE REF TO lcl_catalog.",` TO lt_js.
-  APPEND `"    CLASS-METHODS classify",` TO lt_js.
-  APPEND `"      IMPORTING iv_price       TYPE p",` TO lt_js.
-  APPEND `"      RETURNING VALUE(rv_band) TYPE string.",` TO lt_js.
-  APPEND `"ENDCLASS.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"CLASS lcl_app IMPLEMENTATION.",` TO lt_js.
-  APPEND `"  METHOD build_demo_data.",` TO lt_js.
-  APPEND `"    ro_cat = lcl_catalog=>create( 'Summer' ).",` TO lt_js.
-  APPEND `"    DATA ls_item TYPE ty_item.",` TO lt_js.
-  APPEND `"    DO 5 TIMES.",` TO lt_js.
-  APPEND `"      CLEAR ls_item.",` TO lt_js.
-  APPEND `"      ls_item-id       = sy-index.",` TO lt_js.
-  APPEND `"      ls_item-name     = |Item { sy-index }|.",` TO lt_js.
-  APPEND `"      ls_item-category = 'GEN'.",` TO lt_js.
-  APPEND `"      ls_item-price    = sy-index * 10.",` TO lt_js.
-  APPEND `"      ls_item-active   = boolc( sy-index MOD 2 = 0 ).",` TO lt_js.
-  APPEND `"      ro_cat->add_item( ls_item ).",` TO lt_js.
-  APPEND `"    ENDDO.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD classify.",` TO lt_js.
-  APPEND `"    CASE abap_true.",` TO lt_js.
-  APPEND `"      WHEN boolc( iv_price < 10 ).",` TO lt_js.
-  APPEND `"        rv_band = 'LOW'.",` TO lt_js.
-  APPEND `"      WHEN boolc( iv_price < 50 ).",` TO lt_js.
-  APPEND `"        rv_band = 'MID'.",` TO lt_js.
-  APPEND `"      WHEN OTHERS.",` TO lt_js.
-  APPEND `"        rv_band = 'HIGH'.",` TO lt_js.
-  APPEND `"    ENDCASE.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"  METHOD run.",` TO lt_js.
-  APPEND `"    DATA(lo_cat) = build_demo_data( ).",` TO lt_js.
-  APPEND `"    DATA(lv_active) = lo_cat->count_active( ).",` TO lt_js.
-  APPEND `"    DATA(lv_total)  = lo_cat->total_price( ).",` TO lt_js.
-  APPEND `"    WRITE: / lo_cat->lif_pricing~describe( ).",` TO lt_js.
-  APPEND `"    WRITE: / |Active items: { lv_active }|.",` TO lt_js.
-  APPEND `"    WRITE: / |Total: { lv_total } { gc_currency }|.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"    DATA lv_i TYPE i.",` TO lt_js.
-  APPEND `"    lv_i = 1.",` TO lt_js.
-  APPEND `"    WHILE lv_i <= 5.",` TO lt_js.
-  APPEND `"      DATA(ls_found) = lo_cat->find_by_id( lv_i ).",` TO lt_js.
-  APPEND `"      IF ls_found-id IS NOT INITIAL.",` TO lt_js.
-  APPEND `"        DATA(lv_band) = classify( ls_found-price ).",` TO lt_js.
-  APPEND `"        WRITE: / |#{ ls_found-id } { ls_found-name } => { lv_band }|.",` TO lt_js.
-  APPEND `"      ENDIF.",` TO lt_js.
-  APPEND `"      lv_i = lv_i + 1.",` TO lt_js.
-  APPEND `"    ENDWHILE.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"    TRY.",` TO lt_js.
-  APPEND `"        DATA(lv_gross) = lo_cat->lif_pricing~gross_price( 100 ).",` TO lt_js.
-  APPEND `"        WRITE: / |Gross of 100: { lv_gross }|.",` TO lt_js.
-  APPEND `"      CATCH cx_root INTO DATA(lx_error).",` TO lt_js.
-  APPEND `"        WRITE: / |Error: { lx_error->get_text( ) }|.",` TO lt_js.
-  APPEND `"    ENDTRY.",` TO lt_js.
-  APPEND `"  ENDMETHOD.",` TO lt_js.
-  APPEND `"ENDCLASS.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"FORM summarize USING it_items TYPE ty_items",` TO lt_js.
-  APPEND `"               CHANGING cv_total TYPE p.",` TO lt_js.
-  APPEND `"  CLEAR cv_total.",` TO lt_js.
-  APPEND `"  LOOP AT it_items INTO DATA(ls_item).",` TO lt_js.
-  APPEND `"    cv_total = cv_total + ls_item-price.",` TO lt_js.
-  APPEND `"  ENDLOOP.",` TO lt_js.
-  APPEND `"ENDFORM.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"START-OF-SELECTION.",` TO lt_js.
-  APPEND `"  lcl_app=>run( ).",` TO lt_js.
-  APPEND `"  PERFORM summarize USING gt_items CHANGING gv_total.",` TO lt_js.
-  APPEND `"  WRITE: / |Grand total: { gv_total }|.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"FORM apply_discount USING iv_rate TYPE p",` TO lt_js.
-  APPEND `"                    CHANGING ct_items TYPE ty_items.",` TO lt_js.
-  APPEND `"  LOOP AT ct_items ASSIGNING FIELD-SYMBOL(<ls_item>).",` TO lt_js.
-  APPEND `"    IF <ls_item>-active = abap_true.",` TO lt_js.
-  APPEND `"      <ls_item>-price = <ls_item>-price * ( 1 - iv_rate ).",` TO lt_js.
-  APPEND `"    ENDIF.",` TO lt_js.
-  APPEND `"  ENDLOOP.",` TO lt_js.
-  APPEND `"ENDFORM.",` TO lt_js.
-  APPEND `"",` TO lt_js.
-  APPEND `"FORM count_by_category USING it_items TYPE ty_items",` TO lt_js.
-  APPEND `"                             iv_cat   TYPE c",` TO lt_js.
-  APPEND `"                       CHANGING cv_num TYPE i.",` TO lt_js.
-  APPEND `"  cv_num = 0.",` TO lt_js.
-  APPEND `"  LOOP AT it_items INTO DATA(ls_item) WHERE category = iv_cat.",` TO lt_js.
-  APPEND `"    cv_num = cv_num + 1.",` TO lt_js.
-  APPEND `"  ENDLOOP.",` TO lt_js.
-  APPEND `"  WRITE: / |Category { iv_cat }: { cv_num }|.",` TO lt_js.
-  APPEND `"ENDFORM.",` TO lt_js.
+  LOOP AT lt_abap INTO DATA(lv_src).
+    REPLACE ALL OCCURRENCES OF `\` IN lv_src WITH `\\`.
+    REPLACE ALL OCCURRENCES OF `"` IN lv_src WITH `\"`.
+    APPEND `"` && lv_src && `",` TO lt_js.
+  ENDLOOP.
   APPEND `""].join("\n");` TO lt_js.
-  APPEND `main("zdemo_abaplint.prog.abap", abapSource);` TO lt_js.
+  APPEND `main("zabapgit_standalone.prog.abap", abapSource);` TO lt_js.
   APPEND `console.log("Done");` TO lt_js.
   APPEND `` TO lt_js.
   DATA(lv_js) = concat_lines_of(

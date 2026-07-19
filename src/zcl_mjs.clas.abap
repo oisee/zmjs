@@ -57,6 +57,12 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 io_env        TYPE REF TO zcl_mjs_env
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
+    " Bind a for-of / for-in loop variable, handling object destructuring patterns
+    CLASS-METHODS bind_for_target
+      IMPORTING ir_left  TYPE REF TO data
+                is_item  TYPE zif_mjs=>ty_value
+                io_env   TYPE REF TO zcl_mjs_env
+      RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_node_for_in
       IMPORTING ir_node       TYPE REF TO data
                 io_env        TYPE REF TO zcl_mjs_env
@@ -978,12 +984,16 @@ CLASS zcl_mjs IMPLEMENTATION.
     ASSIGN <n>-left->* TO <nf_of>.
     DATA lv_of_name TYPE string.
     DATA lv_of_decl TYPE abap_bool.
+    DATA lv_of_pattern TYPE abap_bool.
     IF <nf_of>-kind = zif_mjs=>c_node_var. " it was let/const/var x
       lv_of_name = <nf_of>-str.
       lv_of_decl = abap_true.
     ELSEIF <nf_of>-kind = zif_mjs=>c_node_ident. " it was x
       lv_of_name = <nf_of>-str.
       lv_of_decl = abap_false.
+    ELSEIF <nf_of>-kind = zif_mjs=>c_node_object AND <nf_of>-op = `D`. " it was let/const {a, b}
+      lv_of_pattern = abap_true.
+      lv_of_decl = abap_true.
     ENDIF.
 
     DATA lv_iter_return TYPE abap_bool VALUE abap_false.
@@ -995,7 +1005,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
         lo_iter_env->output = io_env->output.
 
-        IF lv_of_decl = abap_true.
+        IF lv_of_pattern = abap_true.
+          bind_for_target( ir_left = <n>-left is_item = ls_item_val io_env = lo_iter_env ).
+        ELSEIF lv_of_decl = abap_true.
           lo_iter_env->set( iv_name = lv_of_name is_val = ls_item_val ).
         ELSE.
           io_env->set( iv_name = lv_of_name is_val = ls_item_val ).
@@ -1027,7 +1039,9 @@ CLASS zcl_mjs IMPLEMENTATION.
             DATA(ls_mi_item_val) = zcl_mjs_val=>unbox_value( lr_mi_item ).
             CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
             lo_iter_env->output = io_env->output.
-            IF lv_of_decl = abap_true.
+            IF lv_of_pattern = abap_true.
+              bind_for_target( ir_left = <n>-left is_item = ls_mi_item_val io_env = lo_iter_env ).
+            ELSEIF lv_of_decl = abap_true.
               lo_iter_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
             ELSE.
               io_env->set( iv_name = lv_of_name is_val = ls_mi_item_val ).
@@ -1060,7 +1074,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         CREATE OBJECT lo_iter_env EXPORTING io_parent = io_env.
         lo_iter_env->output = io_env->output.
 
-        IF lv_of_decl = abap_true.
+        IF lv_of_pattern = abap_true.
+          bind_for_target( ir_left = <n>-left is_item = ls_sch_val io_env = lo_iter_env ).
+        ELSEIF lv_of_decl = abap_true.
           lo_iter_env->set( iv_name = lv_of_name is_val = ls_sch_val ).
         ELSE.
           io_env->set( iv_name = lv_of_name is_val = ls_sch_val ).
@@ -1089,6 +1105,26 @@ CLASS zcl_mjs IMPLEMENTATION.
       io_env->returning = abap_true.
       io_env->ret_val = lo_iter_env->ret_val.
     ENDIF.
+  ENDMETHOD.
+
+  METHOD bind_for_target.
+    " Destructure the current iteration item into the loop scope.
+    " The pattern node reuses c_node_object with op = 'D'; args are stored as
+    " (source-key string node, target ident node) pairs.
+    FIELD-SYMBOLS <pat> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_left->* TO <pat>.
+    DATA lv_bi TYPE i VALUE 1.
+    WHILE lv_bi <= lines( <pat>-args ).
+      READ TABLE <pat>-args INDEX lv_bi INTO DATA(lr_bsrc).
+      FIELD-SYMBOLS <bsrc> TYPE zif_mjs=>ty_node.
+      ASSIGN lr_bsrc->* TO <bsrc>.
+      READ TABLE <pat>-args INDEX lv_bi + 1 INTO DATA(lr_btgt).
+      FIELD-SYMBOLS <btgt> TYPE zif_mjs=>ty_node.
+      ASSIGN lr_btgt->* TO <btgt>.
+      DATA(ls_bval) = eval_property_access( is_obj = is_item iv_prop = <bsrc>-str io_env = io_env ).
+      io_env->define( iv_name = <btgt>-str is_val = ls_bval ).
+      lv_bi = lv_bi + 2.
+    ENDWHILE.
   ENDMETHOD.
 
   METHOD eval_node_for_in.
