@@ -12638,7 +12638,13 @@ START-OF-SELECTION.
   APPEND `// src/index.ts` TO lt_js.
   APPEND `function main(filename, code) {` TO lt_js.
   APPEND `  console.log("Running statement parser...");` TO lt_js.
-  APPEND `  new StatementParser("v750" /* v750 */);` TO lt_js.
+  APPEND `  var file = new MemoryFile(filename, code);` TO lt_js.
+  APPEND `  var lexer = new Lexer();` TO lt_js.
+  APPEND `  var lexerResult = lexer.run(file);` TO lt_js.
+  APPEND `  console.log("Tokens: " + lexerResult.tokens.length);` TO lt_js.
+  APPEND `  var parser = new StatementParser("v750" /* v750 */);` TO lt_js.
+  APPEND `  var result = parser.run([lexerResult], []);` TO lt_js.
+  APPEND `  console.log("Statements: " + result[0].statements.length);` TO lt_js.
   APPEND `}` TO lt_js.
   " Read the ABAP source of report ZABAPGIT_STANDALONE and feed it to the parser.
   DATA lt_abap TYPE STANDARD TABLE OF string.
