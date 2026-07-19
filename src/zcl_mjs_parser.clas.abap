@@ -1,10 +1,11 @@
 CLASS zcl_mjs_parser DEFINITION PUBLIC.
   PUBLIC SECTION.
-    DATA tokens TYPE zif_mjs=>tt_tokens.
+    DATA tokens TYPE REF TO zif_mjs=>tt_tokens.
     DATA pos    TYPE i.
 
     METHODS constructor
-      IMPORTING it_tokens TYPE zif_mjs=>tt_tokens.
+      IMPORTING it_tokens TYPE zif_mjs=>tt_tokens OPTIONAL
+                ir_tokens TYPE REF TO zif_mjs=>tt_tokens OPTIONAL.
     METHODS peek
       IMPORTING iv_offset TYPE i DEFAULT 0
       RETURNING VALUE(rs_tok) TYPE zif_mjs=>ty_token.
@@ -78,20 +79,27 @@ CLASS zcl_mjs_parser DEFINITION PUBLIC.
       RETURNING VALUE(rr_node) TYPE REF TO data.
     METHODS parse_member
       RETURNING VALUE(rr_node) TYPE REF TO data.
+    METHODS defer_block
+      RETURNING VALUE(rv_pos) TYPE i.
 ENDCLASS.
 
 CLASS zcl_mjs_parser IMPLEMENTATION.
   METHOD constructor.
-    tokens = it_tokens.
+    IF ir_tokens IS BOUND.
+      tokens = ir_tokens.
+    ELSE.
+      CREATE DATA tokens.
+      tokens->* = it_tokens.
+    ENDIF.
     pos = 0.
   ENDMETHOD.
 
   METHOD peek.
-    IF pos + iv_offset >= lines( tokens ).
+    IF tokens IS NOT BOUND OR pos + iv_offset >= lines( tokens->* ).
       rs_tok-kind = 5.
       rs_tok-val = ``.
     ELSE.
-      READ TABLE tokens INDEX pos + iv_offset + 1 INTO rs_tok.
+      READ TABLE tokens->* INDEX pos + iv_offset + 1 INTO rs_tok.
     ENDIF.
   ENDMETHOD.
 
@@ -103,6 +111,28 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
   METHOD expect.
 * todo: throw error if not match?
     next( ).
+  ENDMETHOD.
+
+  METHOD defer_block.
+    rv_pos = pos.
+    IF peek( )-val <> `{`.
+      RETURN.
+    ENDIF.
+
+    DATA lv_depth TYPE i.
+    WHILE peek( )-kind <> 5.
+      DATA(ls_token) = next( ).
+      " Only operator/punctuation tokens affect nesting. String and regex
+      " token values can themselves be "{" or "}".
+      IF ls_token-kind = 3 AND ls_token-val = `{`.
+        lv_depth = lv_depth + 1.
+      ELSEIF ls_token-kind = 3 AND ls_token-val = `}`.
+        lv_depth = lv_depth - 1.
+        IF lv_depth = 0.
+          RETURN.
+        ENDIF.
+      ENDIF.
+    ENDWHILE.
   ENDMETHOD.
 
   METHOD parse_program.
@@ -510,12 +540,15 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         ENDIF.
       ENDWHILE.
       expect( `)` ).
-      DATA(lt_mbody) = parse_block( ).
+      DATA(lv_mbody_pos) = defer_block( ).
       DATA ls_m TYPE zif_mjs=>ty_class_method.
+      CLEAR ls_m.
       ls_m-name    = lv_mname.
       ls_m-params  = lt_params.
-      ls_m-body    = lt_mbody.
       ls_m-is_ctor = boolc( lv_mname = `constructor` ).
+      ls_m-body_lazy = abap_true.
+      ls_m-body_pos = lv_mbody_pos.
+      ls_m-body_tokens = tokens.
       APPEND ls_m TO lt_methods.
     ENDWHILE.
     expect( `}` ).
@@ -562,7 +595,15 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       ENDIF.
     ENDWHILE.
     expect( `)` ).
-    DATA(lt_body) = parse_body( ).
+    DATA lt_body TYPE zif_mjs=>tt_nodes.
+    DATA lv_body_pos TYPE i.
+    DATA lv_body_lazy TYPE abap_bool.
+    IF peek( )-val = `{`.
+      lv_body_pos = defer_block( ).
+      lv_body_lazy = abap_true.
+    ELSE.
+      lt_body = parse_body( ).
+    ENDIF.
     DATA lr_n TYPE REF TO zif_mjs=>ty_node.
     CREATE DATA lr_n.
     lr_n->kind           = zif_mjs=>c_node_func_decl.
@@ -570,6 +611,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
     lr_n->params         = lt_params.
     lr_n->default_params = lt_default_params.
     lr_n->body           = lt_body.
+    lr_n->body_lazy      = lv_body_lazy.
+    lr_n->body_pos       = lv_body_pos.
+    lr_n->body_tokens    = tokens.
     rr_node = lr_n.
   ENDMETHOD.
 
@@ -662,8 +706,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
       IF <arrow_left>-kind = zif_mjs=>c_node_ident AND peek( )-val = `=>`.
         next( ).
         DATA lt_arrow_body TYPE zif_mjs=>tt_nodes.
+        DATA lv_arrow_pos TYPE i.
+        DATA lv_arrow_lazy TYPE abap_bool.
         IF peek( )-val = `{`.
-          lt_arrow_body = parse_block( ).
+          lv_arrow_pos = defer_block( ).
+          lv_arrow_lazy = abap_true.
         ELSE.
           DATA(lr_arrow_expr) = parse_assign( ).
           DATA lr_arrow_ret TYPE REF TO zif_mjs=>ty_node.
@@ -678,6 +725,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         lr_arrow->str    = ``.
         lr_arrow->params = VALUE #( ( <arrow_left>-str ) ).
         lr_arrow->body   = lt_arrow_body.
+        lr_arrow->body_lazy = lv_arrow_lazy.
+        lr_arrow->body_pos = lv_arrow_pos.
+        lr_arrow->body_tokens = tokens.
         rr_node = lr_arrow.
         RETURN.
       ENDIF.
@@ -1162,8 +1212,11 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
         IF peek( )-val = `=>`.
           next( ).
           DATA lt_ab TYPE zif_mjs=>tt_nodes.
+          DATA lv_ab_pos TYPE i.
+          DATA lv_ab_lazy TYPE abap_bool.
           IF peek( )-val = `{`.
-            lt_ab = parse_block( ).
+            lv_ab_pos = defer_block( ).
+            lv_ab_lazy = abap_true.
           ELSE.
             DATA(lr_ae) = parse_assign( ).
             DATA lr_ar TYPE REF TO zif_mjs=>ty_node.
@@ -1178,6 +1231,9 @@ CLASS zcl_mjs_parser IMPLEMENTATION.
           lr_af->str    = ``.
           lr_af->params = lt_arrow_params.
           lr_af->body   = lt_ab.
+          lr_af->body_lazy = lv_ab_lazy.
+          lr_af->body_pos = lv_ab_pos.
+          lr_af->body_tokens = tokens.
           rr_node = lr_af.
           RETURN.
         ENDIF.

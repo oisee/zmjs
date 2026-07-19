@@ -108,6 +108,7 @@ CLASS ltcl_test DEFINITION FOR TESTING
     METHODS test_replace_regex_anchor FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex FOR TESTING RAISING zcx_mjs_runtime.
     METHODS test_replace_empty_regex_g FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS test_lazy_bodies FOR TESTING RAISING zcx_mjs_runtime.
 
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
 
@@ -926,6 +927,33 @@ CLASS ltcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
       act = trim( zcl_mjs=>eval( `console.log("abc".replace(/(?:)/g, "-"));` ) )
       exp = |-a-b-c-| ).
+  ENDMETHOD.
+
+  METHOD test_lazy_bodies.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `function unused() { let brace = "{"; console.log("BAD" + brace); }` && lv_nl &&
+      `function outer(x) { let brace = "}"; return (y) => { return x + y; }; }` && lv_nl &&
+      `class C { value() { return 40; } unused() { console.log("BAD"); } }` && lv_nl &&
+      `let add = outer(1);` && lv_nl &&
+      `let c = new C();` && lv_nl &&
+      `console.log(add(1));` && lv_nl &&
+      `console.log(add(2));` && lv_nl &&
+      `console.log(c.value());` && lv_nl &&
+      `console.log(c.value());`.
+
+    DATA(lt_tokens) = zcl_mjs_tokenizer=>tokenize( lv_js ).
+    DATA(lo_parser) = NEW zcl_mjs_parser( it_tokens = lt_tokens ).
+    DATA(lt_nodes) = lo_parser->parse_program( ).
+    READ TABLE lt_nodes INDEX 1 INTO DATA(lr_unused).
+    FIELD-SYMBOLS <unused> TYPE zif_mjs=>ty_node.
+    ASSIGN lr_unused->* TO <unused>.
+    cl_abap_unit_assert=>assert_equals( act = <unused>-body_lazy exp = abap_true ).
+    cl_abap_unit_assert=>assert_initial( <unused>-body ).
+
+    cl_abap_unit_assert=>assert_equals(
+      act = trim( zcl_mjs=>eval( lv_js ) )
+      exp = |2 3 40 40| ).
   ENDMETHOD.
 
   METHOD test262.
