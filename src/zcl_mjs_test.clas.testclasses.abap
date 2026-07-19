@@ -4,6 +4,8 @@ CLASS lcl_test DEFINITION FOR TESTING
   PRIVATE SECTION.
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
     METHODS arr_join FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS arr_slice FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS arr_pop FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_fib FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_loop FOR TESTING RAISING zcx_mjs_runtime.
 ENDCLASS.
@@ -120,6 +122,58 @@ CLASS lcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |PASS=9 FAIL=0| )
       msg = |arr_join: expected PASS=9 FAIL=0, got: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD arr_slice.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let pass = 0;` && lv_nl &&
+      `let fail = 0;` && lv_nl &&
+      `function assert(cond, msg) {` && lv_nl &&
+      `  if (cond) { pass = pass + 1; } else { fail = fail + 1; console.log("FAIL: " + msg); }` && lv_nl &&
+      `}` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(1, 3).join(",") === "2,3", "start and end");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(2).join(",") === "3,4,5", "start only");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice().join(",") === "1,2,3,4,5", "no args copies");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(-2).join(",") === "4,5", "negative start");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(1, -1).join(",") === "2,3,4", "negative end");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(10).join(",") === "", "start past end");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice(3, 1).join(",") === "", "end before start");` && lv_nl &&
+      `assert([1, 2, 3, 4, 5].slice().length === 5, "length of copy");` && lv_nl &&
+      `let orig = [1, 2, 3];` && lv_nl &&
+      `let cut = orig.slice(0, 2);` && lv_nl &&
+      `assert(orig.length === 3, "slice does not mutate original");` && lv_nl &&
+      `assert(cut.length === 2, "sliced length");` && lv_nl &&
+      `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |PASS=10 FAIL=0| )
+      msg = |arr_slice: expected PASS=10 FAIL=0, got: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD arr_pop.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let pass = 0;` && lv_nl &&
+      `let fail = 0;` && lv_nl &&
+      `function assert(cond, msg) {` && lv_nl &&
+      `  if (cond) { pass = pass + 1; } else { fail = fail + 1; console.log("FAIL: " + msg); }` && lv_nl &&
+      `}` && lv_nl &&
+      `let a = [1, 2, 3];` && lv_nl &&
+      `assert(a.pop() === 3, "returns last element");` && lv_nl &&
+      `assert(a.length === 2, "length decreases");` && lv_nl &&
+      `assert(a.join(",") === "1,2", "remaining elements");` && lv_nl &&
+      `assert(a.pop() === 2, "second pop");` && lv_nl &&
+      `assert(a.pop() === 1, "third pop");` && lv_nl &&
+      `assert(a.length === 0, "empty after popping all");` && lv_nl &&
+      `assert(typeof [].pop() === "undefined", "pop on empty returns undefined");` && lv_nl &&
+      `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |PASS=7 FAIL=0| )
+      msg = |arr_pop: expected PASS=7 FAIL=0, got: { lv_r }| ).
   ENDMETHOD.
 
   METHOD bench_fib.

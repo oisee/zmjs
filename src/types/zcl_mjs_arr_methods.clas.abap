@@ -166,6 +166,59 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
         ENDLOOP.
         rs_val = is_obj.
 
+      WHEN `pop`.
+        DATA(lv_pop_len) = is_obj-arr->length( ).
+        IF lv_pop_len = 0.
+          rs_val = zcl_mjs_val=>undefined_val( ).
+        ELSE.
+          READ TABLE is_obj-arr->items INDEX lv_pop_len INTO DATA(lr_pop).
+          DELETE is_obj-arr->items INDEX lv_pop_len.
+          rs_val = zcl_mjs_val=>unbox_value( lr_pop ).
+        ENDIF.
+
+      WHEN `slice`.
+        DATA(lv_slc_len) = is_obj-arr->length( ).
+        DATA lv_slc_start TYPE i VALUE 0.
+        DATA lv_slc_end TYPE i.
+        lv_slc_end = lv_slc_len.
+        IF lines( it_args ) >= 1.
+          READ TABLE it_args INDEX 1 INTO DATA(ls_slc_a1).
+          IF ls_slc_a1-type <> zif_mjs=>c_type_undefined.
+            lv_slc_start = zcl_mjs_val=>to_number( ls_slc_a1 ).
+            IF lv_slc_start < 0.
+              lv_slc_start = lv_slc_start + lv_slc_len.
+              IF lv_slc_start < 0.
+                lv_slc_start = 0.
+              ENDIF.
+            ELSEIF lv_slc_start > lv_slc_len.
+              lv_slc_start = lv_slc_len.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+        IF lines( it_args ) >= 2.
+          READ TABLE it_args INDEX 2 INTO DATA(ls_slc_a2).
+          IF ls_slc_a2-type <> zif_mjs=>c_type_undefined.
+            lv_slc_end = zcl_mjs_val=>to_number( ls_slc_a2 ).
+            IF lv_slc_end < 0.
+              lv_slc_end = lv_slc_end + lv_slc_len.
+              IF lv_slc_end < 0.
+                lv_slc_end = 0.
+              ENDIF.
+            ELSEIF lv_slc_end > lv_slc_len.
+              lv_slc_end = lv_slc_len.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+        DATA lo_slc_arr TYPE REF TO zcl_mjs_array.
+        CREATE OBJECT lo_slc_arr.
+        DATA(lv_slc_i) = lv_slc_start.
+        WHILE lv_slc_i < lv_slc_end.
+          lo_slc_arr->push( is_obj-arr->items[ lv_slc_i + 1 ] ).
+          lv_slc_i = lv_slc_i + 1.
+        ENDWHILE.
+        rs_val-type = zif_mjs=>c_type_array.
+        rs_val-arr = lo_slc_arr.
+
       WHEN `join`.
         DATA lv_sep TYPE string VALUE `,`.
         IF lines( it_args ) >= 1.
