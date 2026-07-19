@@ -12642,7 +12642,7 @@ START-OF-SELECTION.
   APPEND `  var lexerResult = lexer.run(file);` TO lt_js.
   APPEND `  console.log("Tokens: " + lexerResult.tokens.length);` TO lt_js.
   APPEND `  var parser = new StatementParser("v750" /* v750 */);` TO lt_js.
-  APPEND `  var result = parser.run([lexerResult]);` TO lt_js.
+  APPEND `  var result = parser.run([lexerResult], []);` TO lt_js.
   APPEND `  console.log("Statements: " + result[0].statements.length);` TO lt_js.
   APPEND `}` TO lt_js.
   APPEND `main("test.prog.abap", "WRITE 'Hello World'.");` TO lt_js.
