@@ -3,6 +3,7 @@ CLASS lcl_test DEFINITION FOR TESTING
   RISK LEVEL HARMLESS.
   PRIVATE SECTION.
     METHODS test262 FOR TESTING RAISING zcx_mjs_runtime.
+    METHODS arr_join FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_fib FOR TESTING RAISING zcx_mjs_runtime.
     METHODS bench_loop FOR TESTING RAISING zcx_mjs_runtime.
 ENDCLASS.
@@ -94,6 +95,31 @@ CLASS lcl_test IMPLEMENTATION.
     cl_abap_unit_assert=>assert_true(
       act = boolc( lv_r CS |PASS=46 FAIL=0| )
       msg = |Test262: expected PASS=46 FAIL=0, got: { lv_r }| ).
+  ENDMETHOD.
+
+  METHOD arr_join.
+    DATA(lv_nl) = cl_abap_char_utilities=>newline.
+    DATA(lv_js) =
+      `let pass = 0;` && lv_nl &&
+      `let fail = 0;` && lv_nl &&
+      `function assert(cond, msg) {` && lv_nl &&
+      `  if (cond) { pass = pass + 1; } else { fail = fail + 1; console.log("FAIL: " + msg); }` && lv_nl &&
+      `}` && lv_nl &&
+      `assert([1, 2, 3].join() === "1,2,3", "default separator");` && lv_nl &&
+      `assert([1, 2, 3].join("-") === "1-2-3", "custom separator");` && lv_nl &&
+      `assert([1, 2, 3].join("") === "123", "empty separator");` && lv_nl &&
+      `assert([].join(",") === "", "empty array");` && lv_nl &&
+      `assert([42].join(",") === "42", "single element");` && lv_nl &&
+      `assert([1, null, 3, undefined].join(",") === "1,,3,", "null and undefined become empty");` && lv_nl &&
+      `assert(["a", "b", "c"].join(", ") === "a, b, c", "string elements");` && lv_nl &&
+      `assert([true, false].join("|") === "true|false", "boolean elements");` && lv_nl &&
+      `assert([1, 2, 3].join(undefined) === "1,2,3", "undefined separator defaults to comma");` && lv_nl &&
+      `console.log("PASS=" + pass + " FAIL=" + fail);` && lv_nl.
+
+    DATA(lv_r) = zcl_mjs=>eval( lv_js ).
+    cl_abap_unit_assert=>assert_true(
+      act = boolc( lv_r CS |PASS=9 FAIL=0| )
+      msg = |arr_join: expected PASS=9 FAIL=0, got: { lv_r }| ).
   ENDMETHOD.
 
   METHOD bench_fib.

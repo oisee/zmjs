@@ -166,6 +166,33 @@ CLASS zcl_mjs_arr_methods IMPLEMENTATION.
         ENDLOOP.
         rs_val = is_obj.
 
+      WHEN `join`.
+        DATA lv_sep TYPE string VALUE `,`.
+        IF lines( it_args ) >= 1.
+          READ TABLE it_args INDEX 1 INTO DATA(ls_join_sep).
+          IF ls_join_sep-type <> zif_mjs=>c_type_undefined.
+            lv_sep = zcl_mjs_val=>to_string( ls_join_sep ).
+          ENDIF.
+        ENDIF.
+        DATA lv_join TYPE string.
+        DATA lv_join_first TYPE abap_bool VALUE abap_true.
+        LOOP AT is_obj-arr->items INTO DATA(lr_join_item).
+          DATA(ls_join_elem) = zcl_mjs_val=>unbox_value( lr_join_item ).
+          DATA lv_join_str TYPE string.
+          IF ls_join_elem-type = zif_mjs=>c_type_undefined OR ls_join_elem-type = zif_mjs=>c_type_null.
+            lv_join_str = ``.
+          ELSE.
+            lv_join_str = zcl_mjs_val=>to_string( ls_join_elem ).
+          ENDIF.
+          IF lv_join_first = abap_true.
+            lv_join = lv_join_str.
+            lv_join_first = abap_false.
+          ELSE.
+            lv_join = lv_join && lv_sep && lv_join_str.
+          ENDIF.
+        ENDLOOP.
+        rs_val = zcl_mjs_val=>string_val( lv_join ).
+
       WHEN OTHERS.
         RAISE EXCEPTION TYPE zcx_mjs_runtime
           EXPORTING
