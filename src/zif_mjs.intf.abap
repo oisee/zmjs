@@ -14,6 +14,18 @@ INTERFACE zif_mjs PUBLIC.
     " getter wrapper: fn is invoked on property access (Object.defineProperty get)
     c_type_getter    TYPE i VALUE 10.
 
+  " Static-builtin interception codes for member-access / method-call nodes.
+  " Classified once on first eval (string compares) and cached on ty_node-builtin,
+  " so the hot path pays a single integer compare instead of the compare gauntlet.
+  " 0 = not yet classified (initial); c_builtin_none = classified, no interception.
+  CONSTANTS:
+    c_builtin_unresolved     TYPE i VALUE 0,
+    c_builtin_none           TYPE i VALUE 1,
+    c_builtin_date_now       TYPE i VALUE 2,
+    c_builtin_object_keys    TYPE i VALUE 3,
+    c_builtin_object_defprop TYPE i VALUE 4,
+    c_builtin_super          TYPE i VALUE 5.
+
   TYPES:
     BEGIN OF ty_value,
       type TYPE i,
@@ -135,6 +147,9 @@ INTERFACE zif_mjs PUBLIC.
       " Slot optimization: pre-assigned local variable index (1-based)
       slot      TYPE i,         " 0 = not assigned
       slot_ok   TYPE abap_bool, " X = use slot, ' ' = use name-based lookup
+      " Static-builtin interception (member-access / method-call nodes only),
+      " lazily classified and cached - see zif_mjs=>c_builtin_* (0 = unresolved)
+      builtin   TYPE i,
     END OF ty_node.
 
   " Function (closure is REF TO object to break circular dep with zcl_mjs_env)
