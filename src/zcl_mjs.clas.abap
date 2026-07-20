@@ -324,16 +324,8 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Share slot_map reference (no copy - all calls use the same hash table)
     lo_call_env->slot_map = <fn>-slot_map.
 
-    " Pre-size the slot table to max_slots once, so set_slot is a branchless
-    " indexed write (no per-write grow check). Unwritten slots read as
-    " undefined (initial ty_value), matching JS semantics. slot_map is only
-    " ever bound on call envs, so every set_slot target is pre-sized here.
-    IF <fn>-max_slots > 0.
-      DATA ls_undef_slot TYPE zif_mjs=>ty_value.
-      DO <fn>-max_slots TIMES.
-        APPEND ls_undef_slot TO lo_call_env->slots.
-      ENDDO.
-    ENDIF.
+    " slots grow on demand in set_slot (see zcl_mjs_env); the VM's slot writes
+    " go through set_slot too, so lazy growth is safe on both paths.
 
     " Bind 'this': the receiver, or (sloppy-mode plain call) the caller's this.
     " Object/array payloads are references, so mutations through 'this' are
@@ -992,6 +984,7 @@ CLASS zcl_mjs IMPLEMENTATION.
         WHEN zif_mjs=>c_op_load_slot.
           lv_sp = lv_sp + 1.
           READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          CLEAR <sv>.  " unwritten local reads as undefined (slots grow lazily)
           READ TABLE io_env->slots INDEX <c>-a INTO <sv>.
 
         WHEN zif_mjs=>c_op_load_this.
@@ -1154,27 +1147,17 @@ CLASS zcl_mjs IMPLEMENTATION.
         WHEN zif_mjs=>c_op_get_field.
           READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
           IF <a>-type = zif_mjs=>c_type_object AND <a>-obj IS BOUND.
-            " Phase 2 inline cache: if the receiver's shape matches the shape
-            " cached on this instruction, read values[cached offset] directly -
-            " no hashing. On a miss, resolve the offset and refresh the cache.
+            " Inlined object property read: one atom-keyed hashed read, skipping
+            " the eval_property_access + get_a method calls. Getters and
+            " non-object receivers use the general path.
             DATA(ls_gfo) = <a>.
-            DATA lv_goff TYPE i.
-            IF <c>-b = ls_gfo-obj->shape_id.
-              lv_goff = <c>-c.
-            ELSE.
-              lv_goff = ls_gfo-obj->offset_of( <c>-a ).
-              <c>-b = ls_gfo-obj->shape_id.
-              <c>-c = lv_goff.
-            ENDIF.
-            IF lv_goff = 0.
+            READ TABLE ls_gfo-obj->props WITH TABLE KEY key = <c>-a ASSIGNING FIELD-SYMBOL(<gpp>).
+            IF sy-subrc <> 0.
               CLEAR <a>.
+            ELSEIF <gpp>-val-type = zif_mjs=>c_type_getter.
+              <a> = call_function( ir_fn = <gpp>-val-fn it_args = VALUE #( ) io_env = io_env is_this = ls_gfo ).
             ELSE.
-              READ TABLE ls_gfo-obj->values INDEX lv_goff INTO DATA(ls_gfv).
-              IF ls_gfv-type = zif_mjs=>c_type_getter.
-                <a> = call_function( ir_fn = ls_gfv-fn it_args = VALUE #( ) io_env = io_env is_this = ls_gfo ).
-              ELSE.
-                <a> = ls_gfv.
-              ENDIF.
+              <a> = <gpp>-val.
             ENDIF.
           ELSE.
             <a> = eval_property_access( is_obj = <a> iv_prop = <c>-s iv_atom = <c>-a io_env = io_env ).
@@ -1216,16 +1199,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           READ TABLE lt_stack INDEX lv_soi ASSIGNING <a>.      " object
           lv_sp = lv_sp - 2.
           IF <a>-type = zif_mjs=>c_type_object.
-            " Phase 2 inline cache: overwrite an existing property in place on a
-            " shape hit; otherwise set_a (which may add/transition), then refresh.
-            IF <c>-b = <a>-obj->shape_id AND <c>-c > 0.
-              READ TABLE <a>-obj->values INDEX <c>-c ASSIGNING FIELD-SYMBOL(<sfv>).
-              <sfv> = <b>.
-            ELSE.
-              <a>-obj->set_a( iv_atom = <c>-a is_val = <b> ).
-              <c>-b = <a>-obj->shape_id.
-              <c>-c = <a>-obj->offset_of( <c>-a ).
-            ENDIF.
+            <a>-obj->set_a( iv_atom = <c>-a is_val = <b> ).
           ELSEIF <a>-type = zif_mjs=>c_type_function.
             IF <a>-obj IS INITIAL.
               CREATE OBJECT <a>-obj.
@@ -1239,8 +1213,8 @@ CLASS zcl_mjs IMPLEMENTATION.
         WHEN zif_mjs=>c_op_store_slot.
           READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
           lv_sp = lv_sp - 1.
-          READ TABLE io_env->slots INDEX <c>-a ASSIGNING <sv>.
-          <sv> = <a>.
+          " via set_slot: grows the slot table on demand (slots are lazy)
+          io_env->set_slot( iv_slot = <c>-a is_val = <a> ).
 
         WHEN zif_mjs=>c_op_store_name.
           READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
@@ -1250,7 +1224,9 @@ CLASS zcl_mjs IMPLEMENTATION.
         WHEN zif_mjs=>c_op_incdec.
           " matches eval_node_incdec: new = old +/- 1 via eval_bin_op,
           " store back, push old (postfix) or new (prefix)
-          READ TABLE io_env->slots INDEX <c>-a ASSIGNING <sv>.
+          DATA ls_old TYPE zif_mjs=>ty_value.
+          CLEAR ls_old.
+          READ TABLE io_env->slots INDEX <c>-a INTO ls_old.  " unwritten -> undefined
           DATA ls_one TYPE zif_mjs=>ty_value.
           CLEAR ls_one.
           ls_one-type = zif_mjs=>c_type_number.
@@ -1261,9 +1237,8 @@ CLASS zcl_mjs IMPLEMENTATION.
           ELSE.
             lv_incop = `-`.
           ENDIF.
-          DATA(ls_old)  = <sv>.
           DATA(ls_newv) = eval_bin_op( iv_op = lv_incop is_left = ls_old is_right = ls_one io_env = io_env ).
-          <sv> = ls_newv.
+          io_env->set_slot( iv_slot = <c>-a is_val = ls_newv ).
           lv_sp = lv_sp + 1.
           READ TABLE lt_stack INDEX lv_sp ASSIGNING FIELD-SYMBOL(<ir>).
           IF <c>-b >= 10.

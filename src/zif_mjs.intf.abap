@@ -126,8 +126,7 @@ INTERFACE zif_mjs PUBLIC.
     BEGIN OF ty_instr,
       op TYPE i,
       a  TYPE i,          " numeric operand: slot / jump target / const idx / argc / atom
-      b  TYPE i,          " secondary operand (incdec variant; get/set_field IC shape)
-      c  TYPE i,          " tertiary operand (get/set_field inline-cache offset)
+      b  TYPE i,          " secondary operand: incdec variant, call-method atom
       s  TYPE string,     " string operand: binop op, resolve/store/call name
     END OF ty_instr,
     tt_instr TYPE STANDARD TABLE OF ty_instr WITH DEFAULT KEY.

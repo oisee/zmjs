@@ -225,8 +225,14 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD set_slot.
-    " slots are pre-sized to max_slots in call_function, so the target index
-    " always exists here - a direct indexed write, no grow check.
+    " Grow the slot table to the written index on demand (slots are not
+    " pre-sized: pre-sizing every call regressed call-heavy workloads).
+    IF iv_slot > lines( slots ).
+      DATA ls_undef TYPE zif_mjs=>ty_value.
+      DO iv_slot - lines( slots ) TIMES.
+        APPEND ls_undef TO slots.
+      ENDDO.
+    ENDIF.
     READ TABLE slots INDEX iv_slot ASSIGNING FIELD-SYMBOL(<sv>).
     <sv> = is_val.
   ENDMETHOD.

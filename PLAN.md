@@ -184,8 +184,10 @@ must stay identical to the HEAD gate (see §7). Check a box only when that gate 
 
 ### Phase P — Prep & clean baseline
 - [ ] Upload items 1–3 to SAP (`ZIF_MJS`, `ZCL_MJS`) via method-level edit; `activate`. *(manual — no SAP tool in dev session)*
-- [x] Implement item 4 (pre-size `slots` to `max_slots` in `call_function`; strip the grow
-      branch in `set_slot`); transpile; tests green. **Done, green.**
+- [~] Item 4 (pre-size `slots`) implemented, then **REVERTED**: pre-sizing `max_slots` entries
+      on every call regressed the call-heavy `abaplint` benchmark (~half of a measured ~10–15%
+      regression). Restored lazy grow in `set_slot`; the VM's slot writes route through
+      `set_slot` too, so lazy growth is safe on both the AST and VM paths.
 - [ ] Run SE30/SAT trace of `ZMJS_ABAPLINT`; save Total Net + top hotspots as the
       **measured baseline**. *(manual — no SAP tool in dev session)*
 - [x] Save the current test262 HEAD failure list as the regression gate. **Done** (34 fails; used as the gate for every step).
@@ -270,18 +272,23 @@ functions/closures, spread, optional chaining, builtin/`super` calls, labeled br
 - [ ] Computed member **write** `obj[e] = v` (`set_index`) — deferred; the AST member-assign
       array path needs separate verification. Falls back to AST.
 
-### Phase 2 — Shapes + inline caches — **partial (property-read fast path), green**
-- [x] **Hidden-class shapes** — `zcl_mjs_obj` fully reworked: each object holds a `shape_id`
-      (shared descriptor: atom→offset map + ordered atom list + transition cache) and a flat
-      `values` array. `get_a`/`set_a`/`has_a`/`offset_of`/`entries` operate on shapes; objects
-      built the same way converge on the same shape. `props` (the old hashed table) is gone;
-      the 6 iteration sites (for-in, `Object.keys`, JSON, class/super copy, `copy_from`) use
-      `entries( )`. Delete isn't implemented, so shapes only grow — offsets are stable.
-- [x] **Inline caches** — `get_field` and `set_field` carry `(cache_shape, cache_offset)` on
-      the instruction (`ty_instr-b`/`-c`). On a shape hit the VM reads/writes `values[offset]`
-      directly — no hashing; on a miss it resolves the offset via `offset_of` and refreshes the
-      cache. Getters, non-object receivers, and property-adds use the general path.
-- [x] Transpiled; **114/114 unit tests green; test262 `PASS=191` byte-identical to HEAD.**
+### Phase 2 — Shapes + inline caches — **IMPLEMENTED, then REVERTED (measured regression)**
+- Full hidden-class shapes + per-instruction inline caches were implemented (`shape_id` +
+  flat `values` array + `offset_of` + transition cache; `get_field`/`set_field` ICs) and
+  passed correctness (114 + test262 191).
+- **But measurement showed a ~10–15% regression on the `abaplint` benchmark** — the workload
+  closest to the SAP hot path (the interpreter running lint-like code). Root cause: shapes add
+  indirection (`gt_shapes` index → shape-map hash → `values` index) to **every** property
+  access, but the inline cache only pays off on the **VM** path. `abaplint` is dominated by the
+  **AST** path (complex functions that fall back), so shapes optimized the minority path and
+  pessimized the majority. Interleaved min-of-N measurement (to beat the ±15% machine noise)
+  confirmed the regression was real and consistent.
+- **Reverted to the flat atom-keyed hashed table** (Phase 0 model, measured neutral vs base).
+  Kept the safe win: the VM `get_field` still reads `obj->props` inline (one hashed read, no
+  `eval_property_access`/`get_a` method calls) — a pure gain with no AST-path penalty. `entries( )`
+  retained for the iteration sites. **Lesson: an inline cache without a cache on the dominant
+  (AST) path is net-negative; shapes need the AST member-access nodes to carry ICs too before
+  they pay off — a larger change, best validated on SAP.**
 
 ### Phase 3 — Value compaction — **DONE, green**
 - [x] **In-place operand stack**: the VM stack is a `tt_value_slots` pre-sized once per call
