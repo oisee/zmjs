@@ -293,19 +293,16 @@ CLASS zcl_mjs IMPLEMENTATION.
       lo_call_env->this_val = io_env->get_this( ).
     ENDIF.
 
-    " Bind params directly by slot index (resolved in compile_function),
-    " skipping the per-param name hash lookup that define( ) needed
+    " Bind params from the precomputed plan (compile_function): direct slot
+    " index, rest flag, and default node - no per-param string ops or hashing.
     DATA lv_idx TYPE i VALUE 1.
     DATA lv_nargs TYPE i.
     lv_nargs = lines( it_args ).
-    LOOP AT <fn>-params INTO DATA(lv_param).
-      DATA lv_param_idx TYPE i.
-      lv_param_idx = sy-tabix.
-      DATA lv_pslot TYPE i.
-      READ TABLE <fn>-param_slots INDEX lv_param_idx INTO lv_pslot.
-      IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
-        " Rest parameter: collect remaining args into array
+    LOOP AT <fn>-param_binds INTO DATA(ls_pb).
+      IF ls_pb-is_rest = abap_true.
+        " Rest parameter: collect remaining args into an array
         DATA lt_rest TYPE zif_mjs=>tt_value_slots.
+        CLEAR lt_rest.
         DATA lv_ri TYPE i.
         lv_ri = lv_idx.
         WHILE lv_ri <= lv_nargs.
@@ -316,21 +313,17 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           lv_ri = lv_ri + 1.
         ENDWHILE.
-        lo_call_env->set_slot( iv_slot = lv_pslot is_val = array_from_slots( lt_rest ) ).
+        lo_call_env->set_slot( iv_slot = ls_pb-slot is_val = array_from_slots( lt_rest ) ).
         EXIT.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
       CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
-      " If arg is missing or explicitly undefined, check for a default expression
-      IF ls_pval-type = zif_mjs=>c_type_undefined.
-        DATA lr_dflt_node TYPE REF TO data.
-        READ TABLE <fn>-default_params INDEX lv_param_idx INTO lr_dflt_node.
-        IF sy-subrc = 0 AND lr_dflt_node IS BOUND.
-          ls_pval = eval_node( ir_node = lr_dflt_node io_env = lo_call_env ).
-        ENDIF.
+      " If arg is missing or explicitly undefined, apply the default expression
+      IF ls_pval-type = zif_mjs=>c_type_undefined AND ls_pb-dflt IS BOUND.
+        ls_pval = eval_node( ir_node = ls_pb-dflt io_env = lo_call_env ).
       ENDIF.
-      lo_call_env->set_slot( iv_slot = lv_pslot is_val = ls_pval ).
+      lo_call_env->set_slot( iv_slot = ls_pb-slot is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
 
@@ -387,13 +380,18 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_next TYPE i VALUE 1.  " 1-based (READ TABLE ... INDEX)
 
     " Params first
-    CLEAR <fn>-param_slots.
+    CLEAR <fn>-param_binds.
     LOOP AT <fn>-params INTO DATA(lv_param).
+      DATA lv_param_ord TYPE i.
+      lv_param_ord = sy-tabix.
       DATA lv_pname TYPE string.
+      DATA lv_is_rest TYPE abap_bool.
       IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
-        lv_pname = lv_param+3.
+        lv_pname   = lv_param+3.
+        lv_is_rest = abap_true.
       ELSE.
-        lv_pname = lv_param.
+        lv_pname   = lv_param.
+        lv_is_rest = abap_false.
       ENDIF.
       READ TABLE lt_map WITH TABLE KEY name = lv_pname TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
@@ -403,10 +401,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         INSERT ls_se INTO TABLE lt_map.
         lv_next = lv_next + 1.
       ENDIF.
-      " Record the param's slot so call_function binds by index; duplicate
-      " param names (sloppy mode) share a slot, so the last argument wins
+      " Precompute the per-call binding plan: slot (duplicate param names in
+      " sloppy mode share a slot, so the last argument wins), rest flag, and
+      " default-value node (unbound when the param has no default).
       READ TABLE lt_map WITH TABLE KEY name = lv_pname ASSIGNING FIELD-SYMBOL(<pse>).
-      APPEND <pse>-slot TO <fn>-param_slots.
+      DATA ls_pbind TYPE zif_mjs=>ty_param_bind.
+      CLEAR ls_pbind.
+      ls_pbind-slot    = <pse>-slot.
+      ls_pbind-is_rest = lv_is_rest.
+      READ TABLE <fn>-default_params INDEX lv_param_ord INTO ls_pbind-dflt.
+      APPEND ls_pbind TO <fn>-param_binds.
     ENDLOOP.
 
     " Walk body to collect var/let/const/function declarations

@@ -77,6 +77,17 @@ INTERFACE zif_mjs PUBLIC.
     END OF ty_slot_entry,
     tt_slot_map TYPE HASHED TABLE OF ty_slot_entry WITH UNIQUE KEY name.
 
+  " Per-param binding plan, precomputed once in compile_function so that
+  " call_function binds each argument with plain field reads - no strlen /
+  " substring rest check and no default_params index lookup per call.
+  TYPES:
+    BEGIN OF ty_param_bind,
+      slot    TYPE i,           " target local slot (1-based)
+      is_rest TYPE abap_bool,   " X = rest param: collect remaining args
+      dflt    TYPE REF TO data, " default-value node, or unbound
+    END OF ty_param_bind,
+    tt_param_bind TYPE STANDARD TABLE OF ty_param_bind WITH DEFAULT KEY.
+
   " Node kinds
   CONSTANTS:
     c_node_number        TYPE i VALUE 0,
@@ -171,9 +182,9 @@ INTERFACE zif_mjs PUBLIC.
       " Hoisted function declarations, collected once at compile time so
       " call_function does not rescan the whole body on every call
       hoisted         TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
-      " Per-param slot number (parallel to params), resolved at compile time
-      " so call_function binds arguments by index without name hashing
-      param_slots     TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+      " Per-param binding plan (parallel to params), resolved at compile time
+      " so call_function binds arguments without per-call string ops
+      param_binds     TYPE tt_param_bind,
     END OF ty_function.
 
 ENDINTERFACE.
