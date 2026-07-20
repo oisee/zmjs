@@ -290,6 +290,26 @@ functions/closures, spread, optional chaining, builtin/`super` calls, labeled br
   (AST) path is net-negative; shapes need the AST member-access nodes to carry ICs too before
   they pay off — a larger change, best validated on SAP.**
 
+### Fundamental follow-up A — Prototype-based method lookup — **ATTEMPTED, REVERTED (broke real code)**
+- Class-heavy code (abaplint: 707 classes) spends ~7% on `EVAL_NODE_NEW` + `ENTRIES` because
+  `new C()` **copies every class method into each instance** (`get_a` reads own-props only).
+  QuickJS never copies — instances hold a `proto` pointer and lookup walks the chain.
+- Implemented: `get_a` walks `proto`; `new` stops copying (proto already set). Correctness held
+  (114 + test262 191, byte-identical) — but **abaplint OOM'd / infinite-looped.** Making `get_a`
+  iterative + 64-hop guarded did **not** fix it, so it's not a proto-walk cycle: the change
+  alters observable semantics the test suite doesn't cover but real code depends on —
+  `instance.constructor` now resolves to the class (was `undefined`), and `for-in`/`Object.keys`/
+  `hasOwnProperty`/`typeof(instance)` all change once methods aren't own-enumerable. Some
+  interpreted abaplint code loops unboundedly under the new semantics.
+- **Reverted.** Prototypes are still the right fundamental direction (deletes the ~7% and is the
+  prerequisite for shapes/ICs to pay off — instances of a class would share one tiny shape), but
+  they need a real JS-object-model compatibility pass (`constructor`, enumerability,
+  `hasOwnProperty`, `typeof`) **plus tests that cover those**, not a drop-in. Do it as a focused
+  effort with the abaplint bundle in the test loop.
+- **Kept the safe win it surfaced:** `new` now copies methods by iterating `obj->props` directly
+  instead of `entries( )` (which allocated a copy table per `new`) — measured **~3–7% faster on
+  abaplint**, the `ENTRIES` hotspot gone. This is the only net change vs the committed fix.
+
 ### Phase 3 — Value compaction — **DONE, green**
 - [x] **In-place operand stack**: the VM stack is a `tt_value_slots` pre-sized once per call
       to `vm_max_stack`; push/pop are index moves and reads/writes go through field-symbols

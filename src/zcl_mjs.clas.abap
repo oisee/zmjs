@@ -2623,13 +2623,14 @@ CLASS zcl_mjs IMPLEMENTATION.
         call_function( ir_fn = ls_ctor_val-fn it_args = lt_new_args io_env = io_env
                        is_this = ls_instance ).
       ENDIF.
-      " IMPORTANT: don't overwrite this.prop with class methods if we already set them in ctor
-      DATA(lt_cls_entries) = ls_cls-obj->entries( ).
-      LOOP AT lt_cls_entries ASSIGNING FIELD-SYMBOL(<cp>).
-        IF <cp>-key <> zcl_mjs_obj=>atom( `constructor` ).
-          IF ls_instance-obj->has_a( <cp>-key ) = abap_false.
-            ls_instance-obj->set_a( iv_atom = <cp>-key is_val = <cp>-val ).
-          ENDIF.
+      " Copy class methods onto the instance (own props). Iterate the class's
+      " props table directly - not entries( ), which allocated a copy table on
+      " every `new` (the ENTRIES hotspot in the SAP trace).
+      DATA lv_ctor_atom TYPE i.
+      lv_ctor_atom = zcl_mjs_obj=>atom( `constructor` ).
+      LOOP AT ls_cls-obj->props ASSIGNING FIELD-SYMBOL(<cp>).
+        IF <cp>-key <> lv_ctor_atom AND ls_instance-obj->has_a( <cp>-key ) = abap_false.
+          ls_instance-obj->set_a( iv_atom = <cp>-key is_val = <cp>-val ).
         ENDIF.
       ENDLOOP.
       rs_val = ls_instance.
