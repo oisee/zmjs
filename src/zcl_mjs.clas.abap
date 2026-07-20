@@ -153,6 +153,13 @@ CLASS zcl_mjs DEFINITION PUBLIC.
                 io_env        TYPE REF TO zcl_mjs_env
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
+    " Classify a member-access / method-call node for static-builtin
+    " interception (Object.keys, Object.defineProperty, Date.now, super.*).
+    " Runs the string compares once; the result is cached on ty_node-builtin.
+    CLASS-METHODS classify_builtin
+      IMPORTING ir_object      TYPE REF TO data
+                iv_property    TYPE string
+      RETURNING VALUE(rv_kind) TYPE i.
     CLASS-METHODS compile_function
       IMPORTING ir_fn         TYPE REF TO data.
     CLASS-METHODS materialize_function
@@ -1269,49 +1276,74 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
+  METHOD classify_builtin.
+    " Runs once per node; the caller caches the result on ty_node-builtin.
+    rv_kind = zif_mjs=>c_builtin_none.
+    IF ir_object IS NOT BOUND.
+      RETURN.
+    ENDIF.
+    FIELD-SYMBOLS <oi> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_object->* TO <oi>.
+    IF sy-subrc <> 0 OR <oi>-kind <> zif_mjs=>c_node_ident.
+      RETURN.
+    ENDIF.
+    CASE <oi>-str.
+      WHEN `Object`.
+        IF iv_property = `keys`.
+          rv_kind = zif_mjs=>c_builtin_object_keys.
+        ELSEIF iv_property = `defineProperty`.
+          rv_kind = zif_mjs=>c_builtin_object_defprop.
+        ENDIF.
+      WHEN `Date`.
+        IF iv_property = `now`.
+          rv_kind = zif_mjs=>c_builtin_date_now.
+        ENDIF.
+      WHEN `super`.
+        rv_kind = zif_mjs=>c_builtin_super.
+    ENDCASE.
+  ENDMETHOD.
+
   METHOD eval_node_method_call.
     FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
     ASSIGN ir_node->* TO <n>.
-    " Intercept Date.now() / Object.keys / Object.defineProperty before looking up Object in env
-    IF <n>-object IS BOUND.
-      FIELD-SYMBOLS <obj_ident> TYPE zif_mjs=>ty_node.
-      ASSIGN <n>-object->* TO <obj_ident>.
-      IF sy-subrc = 0 AND <obj_ident>-kind = zif_mjs=>c_node_ident.
-        IF <obj_ident>-str = `Date` AND <n>-property = `now`.
-          rs_val = zcl_mjs_builtins=>date_now( ).
-          RETURN.
-        ENDIF.
-        IF <obj_ident>-str = `Object`.
-          IF <n>-property = `keys`.
-            DATA ls_ok_in TYPE zif_mjs=>ty_value.
-            IF lines( <n>-args ) > 0.
-              ls_ok_in = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
-            ENDIF.
-            rs_val = zcl_mjs_builtins=>object_keys( ls_ok_in ).
-            RETURN.
-          ELSEIF <n>-property = `defineProperty`.
-            rs_val = zcl_mjs_val=>undefined_val( ).
-            IF lines( <n>-args ) >= 3.
-              DATA lt_dp_args TYPE zif_mjs=>tt_value_slots.
-              APPEND eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ) TO lt_dp_args.
-              APPEND eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ) TO lt_dp_args.
-              APPEND eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ) TO lt_dp_args.
-              DATA(ls_dp_res) = zcl_mjs_builtins=>define_property( lt_dp_args ).
-              IF ls_dp_res-type = zif_mjs=>c_type_object.
-                rs_val = ls_dp_res.
-              ENDIF.
-            ENDIF.
-            RETURN.
-          ENDIF.
-        ENDIF.
-      ENDIF.
+
+    " Classify static-builtin interception once and cache it on the node, so
+    " every subsequent call pays a single integer compare instead of the
+    " Date/Object/super string-compare gauntlet.
+    IF <n>-builtin = zif_mjs=>c_builtin_unresolved.
+      <n>-builtin = classify_builtin( ir_object = <n>-object iv_property = <n>-property ).
     ENDIF.
 
     DATA ls_mcobj TYPE zif_mjs=>ty_value.
-    IF <n>-object IS BOUND.
-      FIELD-SYMBOLS <mc_obj_id> TYPE zif_mjs=>ty_node.
-      ASSIGN <n>-object->* TO <mc_obj_id>.
-      IF sy-subrc = 0 AND <mc_obj_id>-kind = zif_mjs=>c_node_ident AND <mc_obj_id>-str = `super`.
+
+    CASE <n>-builtin.
+      WHEN zif_mjs=>c_builtin_date_now.
+        rs_val = zcl_mjs_builtins=>date_now( ).
+        RETURN.
+
+      WHEN zif_mjs=>c_builtin_object_keys.
+        DATA ls_ok_in TYPE zif_mjs=>ty_value.
+        IF lines( <n>-args ) > 0.
+          ls_ok_in = eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ).
+        ENDIF.
+        rs_val = zcl_mjs_builtins=>object_keys( ls_ok_in ).
+        RETURN.
+
+      WHEN zif_mjs=>c_builtin_object_defprop.
+        rs_val = zcl_mjs_val=>undefined_val( ).
+        IF lines( <n>-args ) >= 3.
+          DATA lt_dp_args TYPE zif_mjs=>tt_value_slots.
+          APPEND eval_node( ir_node = <n>-args[ 1 ] io_env = io_env ) TO lt_dp_args.
+          APPEND eval_node( ir_node = <n>-args[ 2 ] io_env = io_env ) TO lt_dp_args.
+          APPEND eval_node( ir_node = <n>-args[ 3 ] io_env = io_env ) TO lt_dp_args.
+          DATA(ls_dp_res) = zcl_mjs_builtins=>define_property( lt_dp_args ).
+          IF ls_dp_res-type = zif_mjs=>c_type_object.
+            rs_val = ls_dp_res.
+          ENDIF.
+        ENDIF.
+        RETURN.
+
+      WHEN zif_mjs=>c_builtin_super.
         ls_mcobj = io_env->get( `__super_proto__` ).
         IF ls_mcobj-type = zif_mjs=>c_type_object AND ls_mcobj-obj IS BOUND.
           DATA(ls_smval) = eval_property_access( is_obj = ls_mcobj iv_prop = <n>-property io_env = io_env ).
@@ -1334,12 +1366,12 @@ CLASS zcl_mjs IMPLEMENTATION.
             RETURN.
           ENDIF.
         ENDIF.
-      ELSE.
+        " super method not resolvable to a function: fall through with
+        " ls_mcobj = the super prototype (matches the pre-refactor behavior)
+
+      WHEN OTHERS.
         ls_mcobj = eval_node( ir_node = <n>-object io_env = io_env ).
-      ENDIF.
-    ELSE.
-      ls_mcobj = eval_node( ir_node = <n>-object io_env = io_env ).
-    ENDIF.
+    ENDCASE.
 
     IF <n>-op = `?.` AND ( ls_mcobj-type = zif_mjs=>c_type_undefined OR ls_mcobj-type = zif_mjs=>c_type_null ).
       rs_val = zcl_mjs_val=>undefined_val( ).
@@ -1520,25 +1552,27 @@ CLASS zcl_mjs IMPLEMENTATION.
   METHOD eval_node_member_access.
     FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
     ASSIGN ir_node->* TO <n>.
-    " Intercept Object built-in methods accessed as first-class values (e.g. var f = Object.defineProperty)
-    IF <n>-object IS BOUND.
-      FIELD-SYMBOLS <ma_oi> TYPE zif_mjs=>ty_node.
-      ASSIGN <n>-object->* TO <ma_oi>.
-      IF sy-subrc = 0 AND <ma_oi>-kind = zif_mjs=>c_node_ident AND <ma_oi>-str = `Object`.
-        IF <n>-property = `keys` OR <n>-property = `defineProperty`.
-          DATA lr_obj_mafn TYPE REF TO data.
-          CREATE DATA lr_obj_mafn TYPE zif_mjs=>ty_function.
-          FIELD-SYMBOLS <obj_mafn> TYPE zif_mjs=>ty_function.
-          ASSIGN lr_obj_mafn->* TO <obj_mafn>.
-          <obj_mafn>-name = <n>-property.
-          <obj_mafn>-compiled = abap_true. " Built-in, no compilation needed
-          DATA ls_obj_mafnval TYPE zif_mjs=>ty_value.
-          ls_obj_mafnval-type = zif_mjs=>c_type_function.
-          ls_obj_mafnval-fn   = lr_obj_mafn.
-          rs_val = ls_obj_mafnval.
-          RETURN.
-        ENDIF.
-      ENDIF.
+
+    " Classify static-builtin interception once and cache it on the node.
+    IF <n>-builtin = zif_mjs=>c_builtin_unresolved.
+      <n>-builtin = classify_builtin( ir_object = <n>-object iv_property = <n>-property ).
+    ENDIF.
+
+    " Object.keys / Object.defineProperty referenced as first-class values
+    " (e.g. var f = Object.defineProperty).
+    IF <n>-builtin = zif_mjs=>c_builtin_object_keys
+        OR <n>-builtin = zif_mjs=>c_builtin_object_defprop.
+      DATA lr_obj_mafn TYPE REF TO data.
+      CREATE DATA lr_obj_mafn TYPE zif_mjs=>ty_function.
+      FIELD-SYMBOLS <obj_mafn> TYPE zif_mjs=>ty_function.
+      ASSIGN lr_obj_mafn->* TO <obj_mafn>.
+      <obj_mafn>-name = <n>-property.
+      <obj_mafn>-compiled = abap_true. " Built-in, no compilation needed
+      DATA ls_obj_mafnval TYPE zif_mjs=>ty_value.
+      ls_obj_mafnval-type = zif_mjs=>c_type_function.
+      ls_obj_mafnval-fn   = lr_obj_mafn.
+      rs_val = ls_obj_mafnval.
+      RETURN.
     ENDIF.
     DATA(ls_paobj) = eval_node( ir_node = <n>-object io_env = io_env ).
     IF <n>-op = `?.` AND ( ls_paobj-type = zif_mjs=>c_type_undefined OR ls_paobj-type = zif_mjs=>c_type_null ).
