@@ -69,7 +69,8 @@ CLASS zcl_mjs_json IMPLEMENTATION.
         DATA lv_obj_out  TYPE string.
         DATA lv_obj_first TYPE abap_bool VALUE abap_true.
         lv_obj_out = `{`.
-        LOOP AT is_val-obj->props ASSIGNING FIELD-SYMBOL(<prop>).
+        DATA(lt_json_entries) = is_val-obj->entries( ).
+        LOOP AT lt_json_entries ASSIGNING FIELD-SYMBOL(<prop>).
           DATA(ls_pval) = <prop>-val.
           " skip undefined and function values
           IF ls_pval-type = zif_mjs=>c_type_undefined OR ls_pval-type = zif_mjs=>c_type_function.
@@ -78,7 +79,7 @@ CLASS zcl_mjs_json IMPLEMENTATION.
           IF lv_obj_first = abap_false.
             lv_obj_out = lv_obj_out && `,`.
           ENDIF.
-          lv_obj_out = lv_obj_out && `"` && <prop>-key && `":` && stringify( ls_pval ).
+          lv_obj_out = lv_obj_out && `"` && zcl_mjs_obj=>atom_name( <prop>-key ) && `":` && stringify( ls_pval ).
           lv_obj_first = abap_false.
         ENDLOOP.
         rv_json = lv_obj_out && `}`.

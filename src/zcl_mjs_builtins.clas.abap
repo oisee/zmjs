@@ -121,8 +121,9 @@ CLASS zcl_mjs_builtins IMPLEMENTATION.
   METHOD object_keys.
     IF is_val-type = zif_mjs=>c_type_object AND is_val-obj IS BOUND.
       DATA lt_refs TYPE zif_mjs=>tt_nodes.
-      LOOP AT is_val-obj->props ASSIGNING FIELD-SYMBOL(<prop>).
-        APPEND zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( <prop>-key ) ) TO lt_refs.
+      DATA(lt_ok_entries) = is_val-obj->entries( ).
+      LOOP AT lt_ok_entries ASSIGNING FIELD-SYMBOL(<prop>).
+        APPEND zcl_mjs_val=>box_value( zcl_mjs_val=>string_val( zcl_mjs_obj=>atom_name( <prop>-key ) ) ) TO lt_refs.
       ENDLOOP.
       rs_val = zcl_mjs_val=>array_val( lt_refs ).
     ELSE.

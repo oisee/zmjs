@@ -143,12 +143,16 @@ CLASS zcl_mjs DEFINITION PUBLIC.
     CLASS-METHODS eval_property_access
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_prop       TYPE string
+                " interned atom of iv_prop when known (>0) - skips string hashing
+                iv_atom       TYPE i DEFAULT 0
                 io_env        TYPE REF TO zcl_mjs_env OPTIONAL
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
       RAISING zcx_mjs_runtime.
     CLASS-METHODS eval_method_call
       IMPORTING is_obj        TYPE zif_mjs=>ty_value
                 iv_method     TYPE string
+                " interned atom of iv_method when known (>0)
+                iv_atom       TYPE i DEFAULT 0
                 it_args       TYPE zif_mjs=>tt_value_slots
                 io_env        TYPE REF TO zcl_mjs_env
       RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
@@ -164,6 +168,45 @@ CLASS zcl_mjs DEFINITION PUBLIC.
       IMPORTING ir_fn         TYPE REF TO data.
     CLASS-METHODS materialize_function
       IMPORTING ir_fn         TYPE REF TO data.
+    " --- Bytecode VM (Phase 1) ---------------------------------------------
+    " Attempt to compile the function body to bytecode (sets vm_ok on success);
+    " called once, lazily, after compile_function. Unsupported constructs leave
+    " vm_ok = false and the function stays on the AST evaluator.
+    CLASS-METHODS vm_try_compile
+      IMPORTING ir_fn TYPE REF TO data.
+    " Emit bytecode for a statement / expression node. cv_ok is set to false on
+    " the first unsupported construct, aborting the compile.
+    CLASS-METHODS vm_emit_stmt
+      IMPORTING ir_node   TYPE REF TO data
+      CHANGING  ct_code   TYPE zif_mjs=>tt_instr
+                ct_consts TYPE zif_mjs=>tt_value_slots
+                cv_ok     TYPE abap_bool.
+    CLASS-METHODS vm_emit_expr
+      IMPORTING ir_node   TYPE REF TO data
+      CHANGING  ct_code   TYPE zif_mjs=>tt_instr
+                ct_consts TYPE zif_mjs=>tt_value_slots
+                cv_ok     TYPE abap_bool.
+    " Resolve a named function and invoke it (mirrors eval_node_call's named path).
+    CLASS-METHODS vm_call_named
+      IMPORTING iv_name       TYPE string
+                it_args       TYPE zif_mjs=>tt_value_slots
+                io_env        TYPE REF TO zcl_mjs_env
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
+    " Execute a compiled chunk on the stack machine.
+    CLASS-METHODS run_chunk
+      IMPORTING ir_fn         TYPE REF TO data
+                io_env        TYPE REF TO zcl_mjs_env
+      RETURNING VALUE(rs_val) TYPE zif_mjs=>ty_value
+      RAISING zcx_mjs_runtime.
+    " Loop-context stack for break/continue backpatching during a compile.
+    " Safe as class state: a compile walks one function body and never recurses
+    " into another compile (nested function bodies are not descended).
+    TYPES: BEGIN OF ty_loop_ctx,
+             breaks    TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+             continues TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
+           END OF ty_loop_ctx.
+    CLASS-DATA gt_vm_loops TYPE STANDARD TABLE OF ty_loop_ctx.
     CLASS-METHODS collect_slots
       IMPORTING ir_node       TYPE REF TO data
       CHANGING  ct_map        TYPE zif_mjs=>tt_slot_map
@@ -281,7 +324,16 @@ CLASS zcl_mjs IMPLEMENTATION.
     " Share slot_map reference (no copy - all calls use the same hash table)
     lo_call_env->slot_map = <fn>-slot_map.
 
-    " slots grow on first write (set_slot); a missing index reads as undefined
+    " Pre-size the slot table to max_slots once, so set_slot is a branchless
+    " indexed write (no per-write grow check). Unwritten slots read as
+    " undefined (initial ty_value), matching JS semantics. slot_map is only
+    " ever bound on call envs, so every set_slot target is pre-sized here.
+    IF <fn>-max_slots > 0.
+      DATA ls_undef_slot TYPE zif_mjs=>ty_value.
+      DO <fn>-max_slots TIMES.
+        APPEND ls_undef_slot TO lo_call_env->slots.
+      ENDDO.
+    ENDIF.
 
     " Bind 'this': the receiver, or (sloppy-mode plain call) the caller's this.
     " Object/array payloads are references, so mutations through 'this' are
@@ -293,19 +345,16 @@ CLASS zcl_mjs IMPLEMENTATION.
       lo_call_env->this_val = io_env->get_this( ).
     ENDIF.
 
-    " Bind params directly by slot index (resolved in compile_function),
-    " skipping the per-param name hash lookup that define( ) needed
+    " Bind params from the precomputed plan (compile_function): direct slot
+    " index, rest flag, and default node - no per-param string ops or hashing.
     DATA lv_idx TYPE i VALUE 1.
     DATA lv_nargs TYPE i.
     lv_nargs = lines( it_args ).
-    LOOP AT <fn>-params INTO DATA(lv_param).
-      DATA lv_param_idx TYPE i.
-      lv_param_idx = sy-tabix.
-      DATA lv_pslot TYPE i.
-      READ TABLE <fn>-param_slots INDEX lv_param_idx INTO lv_pslot.
-      IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
-        " Rest parameter: collect remaining args into array
+    LOOP AT <fn>-param_binds INTO DATA(ls_pb).
+      IF ls_pb-is_rest = abap_true.
+        " Rest parameter: collect remaining args into an array
         DATA lt_rest TYPE zif_mjs=>tt_value_slots.
+        CLEAR lt_rest.
         DATA lv_ri TYPE i.
         lv_ri = lv_idx.
         WHILE lv_ri <= lv_nargs.
@@ -316,21 +365,17 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           lv_ri = lv_ri + 1.
         ENDWHILE.
-        lo_call_env->set_slot( iv_slot = lv_pslot is_val = array_from_slots( lt_rest ) ).
+        lo_call_env->set_slot( iv_slot = ls_pb-slot is_val = array_from_slots( lt_rest ) ).
         EXIT.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
       CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
-      " If arg is missing or explicitly undefined, check for a default expression
-      IF ls_pval-type = zif_mjs=>c_type_undefined.
-        DATA lr_dflt_node TYPE REF TO data.
-        READ TABLE <fn>-default_params INDEX lv_param_idx INTO lr_dflt_node.
-        IF sy-subrc = 0 AND lr_dflt_node IS BOUND.
-          ls_pval = eval_node( ir_node = lr_dflt_node io_env = lo_call_env ).
-        ENDIF.
+      " If arg is missing or explicitly undefined, apply the default expression
+      IF ls_pval-type = zif_mjs=>c_type_undefined AND ls_pb-dflt IS BOUND.
+        ls_pval = eval_node( ir_node = ls_pb-dflt io_env = lo_call_env ).
       ENDIF.
-      lo_call_env->set_slot( iv_slot = lv_pslot is_val = ls_pval ).
+      lo_call_env->set_slot( iv_slot = ls_pb-slot is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
 
@@ -345,14 +390,23 @@ CLASS zcl_mjs IMPLEMENTATION.
       eval_node( ir_node = lr_hoist io_env = lo_call_env ).
     ENDLOOP.
 
-    " Execute body
-    LOOP AT <fn>-body INTO DATA(lr_stmt).
-      rs_val = eval_node( ir_node = lr_stmt io_env = lo_call_env ).
-      IF lo_call_env->returning = abap_true.
-        rs_val = lo_call_env->ret_val.
-        EXIT.
-      ENDIF.
-    ENDLOOP.
+    " Execute body: bytecode VM if the body compiled (Phase 1), else AST walk.
+    " The compile attempt runs once, lazily, and falls back on any unsupported
+    " construct (vm_ok stays false).
+    IF <fn>-vm_checked = abap_false.
+      vm_try_compile( ir_fn ).
+    ENDIF.
+    IF <fn>-vm_ok = abap_true.
+      rs_val = run_chunk( ir_fn = ir_fn io_env = lo_call_env ).
+    ELSE.
+      LOOP AT <fn>-body INTO DATA(lr_stmt).
+        rs_val = eval_node( ir_node = lr_stmt io_env = lo_call_env ).
+        IF lo_call_env->returning = abap_true.
+          rs_val = lo_call_env->ret_val.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
 
   ENDMETHOD.
 
@@ -378,6 +432,884 @@ CLASS zcl_mjs IMPLEMENTATION.
     CLEAR <fn>-body_tokens.
   ENDMETHOD.
 
+  METHOD vm_try_compile.
+    FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    ASSIGN ir_fn->* TO <fn>.
+    <fn>-vm_checked = abap_true.
+    <fn>-vm_ok      = abap_false.
+    IF <fn>-body_lazy = abap_true.
+      RETURN.
+    ENDIF.
+    CLEAR gt_vm_loops.
+    DATA lt_code   TYPE zif_mjs=>tt_instr.
+    DATA lt_consts TYPE zif_mjs=>tt_value_slots.
+    DATA lv_ok     TYPE abap_bool VALUE abap_true.
+    LOOP AT <fn>-body INTO DATA(lr_s).
+      vm_emit_stmt( EXPORTING ir_node = lr_s
+                    CHANGING  ct_code = lt_code ct_consts = lt_consts cv_ok = lv_ok ).
+      IF lv_ok = abap_false.
+        RETURN.  " unsupported construct -> stay on the AST evaluator
+      ENDIF.
+    ENDLOOP.
+    APPEND VALUE #( op = zif_mjs=>c_op_ret_undef ) TO lt_code.
+    <fn>-vm_code      = lt_code.
+    <fn>-vm_consts    = lt_consts.
+    " lines(code) is a rigorous upper bound on stack depth (<=1 net push/instr)
+    <fn>-vm_max_stack = lines( lt_code ).
+    <fn>-vm_ok        = abap_true.
+  ENDMETHOD.
+
+  METHOD vm_emit_expr.
+    IF cv_ok = abap_false OR ir_node IS NOT BOUND.
+      cv_ok = abap_false.
+      RETURN.
+    ENDIF.
+    FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_node->* TO <n>.
+
+    CASE <n>-kind.
+      WHEN zif_mjs=>c_node_number.
+        DATA ls_cn TYPE zif_mjs=>ty_value.
+        ls_cn-type = zif_mjs=>c_type_number.
+        ls_cn-num  = <n>-num.
+        APPEND ls_cn TO ct_consts.
+        APPEND VALUE #( op = zif_mjs=>c_op_push_const a = lines( ct_consts ) ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_string.
+        DATA ls_cs TYPE zif_mjs=>ty_value.
+        ls_cs-type = zif_mjs=>c_type_string.
+        ls_cs-str  = <n>-str.
+        APPEND ls_cs TO ct_consts.
+        APPEND VALUE #( op = zif_mjs=>c_op_push_const a = lines( ct_consts ) ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_bool.
+        DATA ls_cb TYPE zif_mjs=>ty_value.
+        ls_cb-type = zif_mjs=>c_type_bool.
+        ls_cb-num  = <n>-num.
+        APPEND ls_cb TO ct_consts.
+        APPEND VALUE #( op = zif_mjs=>c_op_push_const a = lines( ct_consts ) ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_ident.
+        IF <n>-slot_ok = abap_true.
+          APPEND VALUE #( op = zif_mjs=>c_op_load_slot a = <n>-slot ) TO ct_code.
+        ELSEIF <n>-str = `this`.
+          APPEND VALUE #( op = zif_mjs=>c_op_load_this ) TO ct_code.
+        ELSE.
+          APPEND VALUE #( op = zif_mjs=>c_op_resolve s = <n>-str ) TO ct_code.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_binop.
+        IF <n>-op = `&&` OR <n>-op = `||`.
+          " short-circuit: eval left; dup; jump past right if decided; else pop+eval right
+          vm_emit_expr( EXPORTING ir_node = <n>-left CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          APPEND VALUE #( op = zif_mjs=>c_op_dup ) TO ct_code.
+          IF <n>-op = `&&`.
+            APPEND VALUE #( op = zif_mjs=>c_op_jump_false ) TO ct_code.
+          ELSE.
+            APPEND VALUE #( op = zif_mjs=>c_op_jump_true ) TO ct_code.
+          ENDIF.
+          DATA lv_scj TYPE i.
+          lv_scj = lines( ct_code ).
+          APPEND VALUE #( op = zif_mjs=>c_op_pop ) TO ct_code.
+          vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          READ TABLE ct_code INDEX lv_scj ASSIGNING FIELD-SYMBOL(<scj>).
+          <scj>-a = lines( ct_code ) + 1.
+        ELSE.
+          vm_emit_expr( EXPORTING ir_node = <n>-left  CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          APPEND VALUE #( op = zif_mjs=>c_op_binop s = <n>-op ) TO ct_code.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_ternary.
+        vm_emit_expr( EXPORTING ir_node = <n>-cond CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump_false ) TO ct_code.
+        DATA lv_tj1 TYPE i.
+        lv_tj1 = lines( ct_code ).
+        vm_emit_expr( EXPORTING ir_node = <n>-left CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump ) TO ct_code.
+        DATA lv_tj2 TYPE i.
+        lv_tj2 = lines( ct_code ).
+        READ TABLE ct_code INDEX lv_tj1 ASSIGNING FIELD-SYMBOL(<tj1>).
+        <tj1>-a = lines( ct_code ) + 1.
+        vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        READ TABLE ct_code INDEX lv_tj2 ASSIGNING FIELD-SYMBOL(<tj2>).
+        <tj2>-a = lines( ct_code ) + 1.
+
+      WHEN zif_mjs=>c_node_unaryop.
+        CASE <n>-op.
+          WHEN `-`.
+            vm_emit_expr( EXPORTING ir_node = <n>-left CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+            APPEND VALUE #( op = zif_mjs=>c_op_neg ) TO ct_code.
+          WHEN `!`.
+            vm_emit_expr( EXPORTING ir_node = <n>-left CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+            APPEND VALUE #( op = zif_mjs=>c_op_not ) TO ct_code.
+          WHEN OTHERS.
+            cv_ok = abap_false.
+        ENDCASE.
+
+      WHEN zif_mjs=>c_node_call.
+        " only plain named calls: no expression callee, spread, builtins or ?.
+        IF <n>-left IS BOUND OR <n>-str IS INITIAL OR <n>-op = `?.`
+            OR <n>-str = `Boolean` OR <n>-str = `RegExp`
+            OR <n>-str = `JSON.stringify` OR <n>-str = `console.log` OR <n>-str = `super`.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        DATA lv_argc TYPE i VALUE 0.
+        LOOP AT <n>-args INTO DATA(lr_arg).
+          FIELD-SYMBOLS <argn> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_arg->* TO <argn>.
+          IF sy-subrc = 0 AND <argn>-op = `SPREAD`.
+            cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          vm_emit_expr( EXPORTING ir_node = lr_arg CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          lv_argc = lv_argc + 1.
+        ENDLOOP.
+        APPEND VALUE #( op = zif_mjs=>c_op_call a = lv_argc s = <n>-str ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_member_access.
+        " non-optional, non-builtin property read: obj.name or obj[expr]
+        IF <n>-op = `?.`.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        IF classify_builtin( ir_object = <n>-object iv_property = <n>-property ) <> zif_mjs=>c_builtin_none.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        vm_emit_expr( EXPORTING ir_node = <n>-object CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        IF <n>-prop_expr IS BOUND.
+          " computed obj[expr]: push the key, then index
+          vm_emit_expr( EXPORTING ir_node = <n>-prop_expr CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          APPEND VALUE #( op = zif_mjs=>c_op_get_index ) TO ct_code.
+        ELSE.
+          APPEND VALUE #( op = zif_mjs=>c_op_get_field a = zcl_mjs_obj=>atom( <n>-property ) s = <n>-property ) TO ct_code.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_method_call.
+        " static, non-optional, non-builtin method call: recv.name( args )
+        IF <n>-op = `?.` OR <n>-object IS NOT BOUND.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        IF classify_builtin( ir_object = <n>-object iv_property = <n>-property ) <> zif_mjs=>c_builtin_none.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        vm_emit_expr( EXPORTING ir_node = <n>-object CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        DATA lv_margc TYPE i VALUE 0.
+        LOOP AT <n>-args INTO DATA(lr_marg).
+          FIELD-SYMBOLS <margn> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_marg->* TO <margn>.
+          IF sy-subrc = 0 AND <margn>-op = `SPREAD`.
+            cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          vm_emit_expr( EXPORTING ir_node = lr_marg CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          lv_margc = lv_margc + 1.
+        ENDLOOP.
+        APPEND VALUE #( op = zif_mjs=>c_op_call_method a = lv_margc
+                        b = zcl_mjs_obj=>atom( <n>-property ) s = <n>-property ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_inc OR zif_mjs=>c_node_dec
+        OR zif_mjs=>c_node_post_inc OR zif_mjs=>c_node_post_dec.
+        " only simple slot-based identifier inc/dec (matches eval_node_incdec)
+        IF <n>-left IS NOT BOUND.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        FIELD-SYMBOLS <incl> TYPE zif_mjs=>ty_node.
+        ASSIGN <n>-left->* TO <incl>.
+        IF sy-subrc <> 0 OR <incl>-kind <> zif_mjs=>c_node_ident OR <incl>-slot_ok = abap_false.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        DATA lv_var TYPE i.
+        IF <n>-kind = zif_mjs=>c_node_inc.
+          lv_var = 1.
+        ELSEIF <n>-kind = zif_mjs=>c_node_dec.
+          lv_var = 2.
+        ELSEIF <n>-kind = zif_mjs=>c_node_post_inc.
+          lv_var = 11.
+        ELSE.
+          lv_var = 12.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_incdec a = <incl>-slot b = lv_var ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_array.
+        " array literal without spread: push each element, then make_array
+        DATA lv_acount TYPE i VALUE 0.
+        LOOP AT <n>-args INTO DATA(lr_ael).
+          FIELD-SYMBOLS <aeln> TYPE zif_mjs=>ty_node.
+          ASSIGN lr_ael->* TO <aeln>.
+          IF sy-subrc = 0 AND <aeln>-op = `SPREAD`.
+            cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          vm_emit_expr( EXPORTING ir_node = lr_ael CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          lv_acount = lv_acount + 1.
+        ENDLOOP.
+        APPEND VALUE #( op = zif_mjs=>c_op_make_array a = lv_acount ) TO ct_code.
+
+      WHEN OTHERS.
+        cv_ok = abap_false.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD vm_emit_stmt.
+    IF cv_ok = abap_false OR ir_node IS NOT BOUND.
+      cv_ok = abap_false.
+      RETURN.
+    ENDIF.
+    FIELD-SYMBOLS <n> TYPE zif_mjs=>ty_node.
+    ASSIGN ir_node->* TO <n>.
+
+    CASE <n>-kind.
+      WHEN zif_mjs=>c_node_return.
+        IF <n>-left IS BOUND.
+          vm_emit_expr( EXPORTING ir_node = <n>-left CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          APPEND VALUE #( op = zif_mjs=>c_op_ret ) TO ct_code.
+        ELSE.
+          APPEND VALUE #( op = zif_mjs=>c_op_ret_undef ) TO ct_code.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_if.
+        vm_emit_expr( EXPORTING ir_node = <n>-cond CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump_false ) TO ct_code.
+        DATA lv_jf TYPE i.
+        lv_jf = lines( ct_code ).
+        LOOP AT <n>-body INTO DATA(lr_tb).
+          vm_emit_stmt( EXPORTING ir_node = lr_tb CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+        IF lines( <n>-els ) > 0.
+          APPEND VALUE #( op = zif_mjs=>c_op_jump ) TO ct_code.
+          DATA lv_je TYPE i.
+          lv_je = lines( ct_code ).
+          READ TABLE ct_code INDEX lv_jf ASSIGNING FIELD-SYMBOL(<jf>).
+          <jf>-a = lines( ct_code ) + 1.
+          LOOP AT <n>-els INTO DATA(lr_eb).
+            vm_emit_stmt( EXPORTING ir_node = lr_eb CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+            IF cv_ok = abap_false.
+              RETURN.
+            ENDIF.
+          ENDLOOP.
+          READ TABLE ct_code INDEX lv_je ASSIGNING FIELD-SYMBOL(<je>).
+          <je>-a = lines( ct_code ) + 1.
+        ELSE.
+          READ TABLE ct_code INDEX lv_jf ASSIGNING FIELD-SYMBOL(<jf2>).
+          <jf2>-a = lines( ct_code ) + 1.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_block.
+        LOOP AT <n>-body INTO DATA(lr_bb).
+          vm_emit_stmt( EXPORTING ir_node = lr_bb CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+
+      WHEN zif_mjs=>c_node_var.
+        " local variable declaration (always slot-allocated in a compiled fn)
+        IF <n>-slot_ok = abap_false.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        IF <n>-right IS BOUND.
+          vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ELSE.
+          APPEND VALUE #( op = zif_mjs=>c_op_push_undef ) TO ct_code.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_store_slot a = <n>-slot ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_assign OR zif_mjs=>c_node_assign_add.
+        " statement-form assignment: value computed on stack, then stored
+        IF <n>-kind = zif_mjs=>c_node_assign_add.
+          IF <n>-slot_ok = abap_true.
+            APPEND VALUE #( op = zif_mjs=>c_op_load_slot a = <n>-slot ) TO ct_code.
+          ELSE.
+            APPEND VALUE #( op = zif_mjs=>c_op_resolve s = <n>-str ) TO ct_code.
+          ENDIF.
+          vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+          APPEND VALUE #( op = zif_mjs=>c_op_binop s = `+` ) TO ct_code.
+        ELSE.
+          vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDIF.
+        IF <n>-slot_ok = abap_true.
+          APPEND VALUE #( op = zif_mjs=>c_op_store_slot a = <n>-slot ) TO ct_code.
+        ELSE.
+          APPEND VALUE #( op = zif_mjs=>c_op_store_name s = <n>-str ) TO ct_code.
+        ENDIF.
+
+      WHEN zif_mjs=>c_node_while.
+        APPEND INITIAL LINE TO gt_vm_loops.
+        DATA lv_wtop TYPE i.
+        lv_wtop = lines( ct_code ) + 1.
+        vm_emit_expr( EXPORTING ir_node = <n>-cond CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump_false ) TO ct_code.
+        DATA lv_wjf TYPE i.
+        lv_wjf = lines( ct_code ).
+        LOOP AT <n>-body INTO DATA(lr_wb).
+          vm_emit_stmt( EXPORTING ir_node = lr_wb CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump a = lv_wtop ) TO ct_code.
+        DATA lv_wend TYPE i.
+        lv_wend = lines( ct_code ) + 1.
+        READ TABLE ct_code INDEX lv_wjf ASSIGNING FIELD-SYMBOL(<wjf>).
+        <wjf>-a = lv_wend.
+        READ TABLE gt_vm_loops INDEX lines( gt_vm_loops ) ASSIGNING FIELD-SYMBOL(<wctx>).
+        LOOP AT <wctx>-breaks INTO DATA(lv_wbrk).
+          READ TABLE ct_code INDEX lv_wbrk ASSIGNING FIELD-SYMBOL(<wbp>).
+          <wbp>-a = lv_wend.
+        ENDLOOP.
+        LOOP AT <wctx>-continues INTO DATA(lv_wcont).
+          READ TABLE ct_code INDEX lv_wcont ASSIGNING FIELD-SYMBOL(<wcp>).
+          <wcp>-a = lv_wtop.  " while: continue re-tests the condition
+        ENDLOOP.
+        DELETE gt_vm_loops INDEX lines( gt_vm_loops ).
+
+      WHEN zif_mjs=>c_node_for.
+        IF <n>-init IS BOUND.
+          vm_emit_stmt( EXPORTING ir_node = <n>-init CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDIF.
+        " a for without a condition needs break/return to terminate; not compiled
+        IF <n>-cond IS NOT BOUND.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND INITIAL LINE TO gt_vm_loops.
+        DATA lv_ftop TYPE i.
+        lv_ftop = lines( ct_code ) + 1.
+        vm_emit_expr( EXPORTING ir_node = <n>-cond CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump_false ) TO ct_code.
+        DATA lv_fjf TYPE i.
+        lv_fjf = lines( ct_code ).
+        LOOP AT <n>-body INTO DATA(lr_fb).
+          vm_emit_stmt( EXPORTING ir_node = lr_fb CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDLOOP.
+        DATA lv_fupd TYPE i.
+        lv_fupd = lines( ct_code ) + 1.  " continue target: the update step
+        IF <n>-update IS BOUND.
+          vm_emit_stmt( EXPORTING ir_node = <n>-update CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+          IF cv_ok = abap_false.
+            RETURN.
+          ENDIF.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump a = lv_ftop ) TO ct_code.
+        DATA lv_fend TYPE i.
+        lv_fend = lines( ct_code ) + 1.
+        READ TABLE ct_code INDEX lv_fjf ASSIGNING FIELD-SYMBOL(<fjf>).
+        <fjf>-a = lv_fend.
+        READ TABLE gt_vm_loops INDEX lines( gt_vm_loops ) ASSIGNING FIELD-SYMBOL(<fctx>).
+        LOOP AT <fctx>-breaks INTO DATA(lv_fbrk).
+          READ TABLE ct_code INDEX lv_fbrk ASSIGNING FIELD-SYMBOL(<fbp>).
+          <fbp>-a = lv_fend.
+        ENDLOOP.
+        LOOP AT <fctx>-continues INTO DATA(lv_fcont).
+          READ TABLE ct_code INDEX lv_fcont ASSIGNING FIELD-SYMBOL(<fcp>).
+          <fcp>-a = lv_fupd.
+        ENDLOOP.
+        DELETE gt_vm_loops INDEX lines( gt_vm_loops ).
+
+      WHEN zif_mjs=>c_node_member_assign.
+        " static property write obj.name = value (computed -> fall back)
+        IF <n>-prop_expr IS BOUND.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        " writeback ident, used only for function-typed targets (matches
+        " eval_node_member_assign, which writes the mutated fn value back)
+        DATA lv_wb TYPE string.
+        CLEAR lv_wb.
+        IF <n>-object IS BOUND.
+          FIELD-SYMBOLS <maon> TYPE zif_mjs=>ty_node.
+          ASSIGN <n>-object->* TO <maon>.
+          IF sy-subrc = 0 AND <maon>-kind = zif_mjs=>c_node_ident.
+            lv_wb = <maon>-str.
+          ENDIF.
+        ENDIF.
+        vm_emit_expr( EXPORTING ir_node = <n>-object CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        vm_emit_expr( EXPORTING ir_node = <n>-right CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_set_field a = zcl_mjs_obj=>atom( <n>-property ) s = lv_wb ) TO ct_code.
+
+      WHEN zif_mjs=>c_node_break.
+        " unlabeled break to the innermost loop (labeled -> fall back)
+        IF <n>-str IS NOT INITIAL OR lines( gt_vm_loops ) = 0.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump ) TO ct_code.
+        READ TABLE gt_vm_loops INDEX lines( gt_vm_loops ) ASSIGNING FIELD-SYMBOL(<bctx>).
+        APPEND lines( ct_code ) TO <bctx>-breaks.
+
+      WHEN zif_mjs=>c_node_continue.
+        IF <n>-str IS NOT INITIAL OR lines( gt_vm_loops ) = 0.
+          cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_jump ) TO ct_code.
+        READ TABLE gt_vm_loops INDEX lines( gt_vm_loops ) ASSIGNING FIELD-SYMBOL(<cctx>).
+        APPEND lines( ct_code ) TO <cctx>-continues.
+
+      WHEN zif_mjs=>c_node_call OR zif_mjs=>c_node_method_call
+        OR zif_mjs=>c_node_member_access
+        OR zif_mjs=>c_node_inc OR zif_mjs=>c_node_dec
+        OR zif_mjs=>c_node_post_inc OR zif_mjs=>c_node_post_dec.
+        " expression statement: evaluate for side effects, discard the value
+        vm_emit_expr( EXPORTING ir_node = ir_node CHANGING ct_code = ct_code ct_consts = ct_consts cv_ok = cv_ok ).
+        IF cv_ok = abap_false.
+          RETURN.
+        ENDIF.
+        APPEND VALUE #( op = zif_mjs=>c_op_pop ) TO ct_code.
+
+      WHEN OTHERS.
+        cv_ok = abap_false.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD vm_call_named.
+    DATA(ls_fn) = io_env->get( iv_name ).
+    IF ls_fn-type = zif_mjs=>c_type_function AND ls_fn-fn IS BOUND.
+      FIELD-SYMBOLS <fni> TYPE zif_mjs=>ty_function.
+      ASSIGN ls_fn-fn->* TO <fni>.
+      IF sy-subrc = 0 AND <fni>-name = `defineProperty`.
+        DATA(ls_dp) = zcl_mjs_builtins=>define_property( it_args ).
+        IF ls_dp-type = zif_mjs=>c_type_object.
+          rs_val = ls_dp.
+          RETURN.
+        ENDIF.
+      ENDIF.
+      rs_val = call_function( ir_fn = ls_fn-fn it_args = it_args io_env = io_env ).
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD run_chunk.
+    FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
+    ASSIGN ir_fn->* TO <fn>.
+
+    DATA lt_stack TYPE zif_mjs=>tt_value_slots.
+    DATA ls_u TYPE zif_mjs=>ty_value.
+    DO <fn>-vm_max_stack TIMES.
+      APPEND ls_u TO lt_stack.
+    ENDDO.
+    DATA lv_sp TYPE i VALUE 0.
+    DATA lv_ip TYPE i VALUE 1.
+    DATA lv_n  TYPE i.
+    lv_n = lines( <fn>-vm_code ).
+    FIELD-SYMBOLS <c>  TYPE zif_mjs=>ty_instr.
+    FIELD-SYMBOLS <sv> TYPE zif_mjs=>ty_value.
+    FIELD-SYMBOLS <a>  TYPE zif_mjs=>ty_value.
+    FIELD-SYMBOLS <b>  TYPE zif_mjs=>ty_value.
+
+    WHILE lv_ip <= lv_n.
+      ASSIGN <fn>-vm_code[ lv_ip ] TO <c>.
+      CASE <c>-op.
+        WHEN zif_mjs=>c_op_push_const.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          READ TABLE <fn>-vm_consts INDEX <c>-a INTO <sv>.
+
+        WHEN zif_mjs=>c_op_push_undef.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          CLEAR <sv>.
+
+        WHEN zif_mjs=>c_op_load_slot.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          READ TABLE io_env->slots INDEX <c>-a INTO <sv>.
+
+        WHEN zif_mjs=>c_op_load_this.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          CLEAR <sv>.
+          DATA lo_te TYPE REF TO zcl_mjs_env.
+          lo_te = io_env.
+          WHILE lo_te IS BOUND.
+            IF lo_te->this_bound = abap_true.
+              <sv> = lo_te->this_val.
+              EXIT.
+            ENDIF.
+            lo_te = lo_te->parent.
+          ENDWHILE.
+
+        WHEN zif_mjs=>c_op_resolve.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          DATA lv_rf TYPE abap_bool.
+          io_env->resolve( EXPORTING iv_name = <c>-s IMPORTING ev_found = lv_rf es_val = <sv> ).
+          IF lv_rf = abap_false.
+            raise_ref_error( <c>-s ).
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_binop.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <b>.
+          lv_sp = lv_sp - 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          " Phase 3: inline the number fast path (mirrors eval_bin_op) so hot
+          " arithmetic avoids the method call and two by-value operand copies.
+          IF <a>-type = zif_mjs=>c_type_number AND <b>-type = zif_mjs=>c_type_number.
+            DATA lv_ba TYPE f.
+            DATA lv_bb TYPE f.
+            lv_ba = <a>-num.
+            lv_bb = <b>-num.
+            DATA ls_bres TYPE zif_mjs=>ty_value.
+            CLEAR ls_bres.
+            DATA lv_bdone TYPE abap_bool VALUE abap_true.
+            CASE <c>-s.
+              WHEN `+`.
+                ls_bres-type = zif_mjs=>c_type_number.
+                ls_bres-num  = lv_ba + lv_bb.
+              WHEN `-`.
+                ls_bres-type = zif_mjs=>c_type_number.
+                ls_bres-num  = lv_ba - lv_bb.
+              WHEN `*`.
+                ls_bres-type = zif_mjs=>c_type_number.
+                ls_bres-num  = lv_ba * lv_bb.
+              WHEN `/`.
+                ls_bres-type = zif_mjs=>c_type_number.
+                IF lv_bb <> 0.
+                  ls_bres-num = lv_ba / lv_bb.
+                ELSEIF lv_ba = 0.
+                  ls_bres-str = `NaN`.
+                ELSEIF lv_ba > 0.
+                  ls_bres-str = `Infinity`.
+                ELSE.
+                  ls_bres-str = `-Infinity`.
+                ENDIF.
+              WHEN `%`.
+                ls_bres-type = zif_mjs=>c_type_number.
+                IF lv_bb <> 0.
+                  DATA lv_bia TYPE i.
+                  DATA lv_bib TYPE i.
+                  lv_bia = lv_ba.
+                  lv_bib = lv_bb.
+                  ls_bres-num = CONV f( lv_bia MOD lv_bib ).
+                ELSE.
+                  ls_bres-str = `NaN`.
+                ENDIF.
+              WHEN `<`.
+                ls_bres-type = zif_mjs=>c_type_bool.
+                IF lv_ba < lv_bb.
+                  ls_bres-num = 1.
+                ENDIF.
+              WHEN `>`.
+                ls_bres-type = zif_mjs=>c_type_bool.
+                IF lv_ba > lv_bb.
+                  ls_bres-num = 1.
+                ENDIF.
+              WHEN `<=`.
+                ls_bres-type = zif_mjs=>c_type_bool.
+                IF lv_ba <= lv_bb.
+                  ls_bres-num = 1.
+                ENDIF.
+              WHEN `>=`.
+                ls_bres-type = zif_mjs=>c_type_bool.
+                IF lv_ba >= lv_bb.
+                  ls_bres-num = 1.
+                ENDIF.
+              WHEN OTHERS.
+                lv_bdone = abap_false.
+            ENDCASE.
+            IF lv_bdone = abap_true.
+              <a> = ls_bres.
+            ELSE.
+              <a> = eval_bin_op( iv_op = <c>-s is_left = <a> is_right = <b> io_env = io_env ).
+            ENDIF.
+          ELSE.
+            <a> = eval_bin_op( iv_op = <c>-s is_left = <a> is_right = <b> io_env = io_env ).
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_neg.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          DATA ls_neg TYPE zif_mjs=>ty_value.
+          CLEAR ls_neg.
+          ls_neg-type = zif_mjs=>c_type_number.
+          ls_neg-num  = 0 - zcl_mjs_val=>to_number( <a> ).
+          <a> = ls_neg.
+
+        WHEN zif_mjs=>c_op_not.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          DATA ls_not TYPE zif_mjs=>ty_value.
+          CLEAR ls_not.
+          ls_not-type = zif_mjs=>c_type_bool.
+          IF zcl_mjs_val=>is_true( <a> ) = abap_false.
+            ls_not-num = 1.
+          ENDIF.
+          <a> = ls_not.
+
+        WHEN zif_mjs=>c_op_jump.
+          lv_ip = <c>-a.
+          CONTINUE.
+
+        WHEN zif_mjs=>c_op_jump_false.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          lv_sp = lv_sp - 1.
+          IF zcl_mjs_val=>is_true( <a> ) = abap_false.
+            lv_ip = <c>-a.
+            CONTINUE.
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_jump_true.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          lv_sp = lv_sp - 1.
+          IF zcl_mjs_val=>is_true( <a> ) = abap_true.
+            lv_ip = <c>-a.
+            CONTINUE.
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_call.
+          DATA lt_cargs TYPE zif_mjs=>tt_value_slots.
+          CLEAR lt_cargs.
+          DATA lv_cbase TYPE i.
+          lv_cbase = lv_sp - <c>-a.
+          DATA lv_ck TYPE i.
+          lv_ck = 1.
+          WHILE lv_ck <= <c>-a.
+            READ TABLE lt_stack INDEX lv_cbase + lv_ck INTO DATA(ls_carg).
+            APPEND ls_carg TO lt_cargs.
+            lv_ck = lv_ck + 1.
+          ENDWHILE.
+          lv_sp = lv_cbase.
+          DATA(ls_cr) = vm_call_named( iv_name = <c>-s it_args = lt_cargs io_env = io_env ).
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          <sv> = ls_cr.
+
+        WHEN zif_mjs=>c_op_get_field.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          IF <a>-type = zif_mjs=>c_type_object AND <a>-obj IS BOUND.
+            " Phase 2 inline cache: if the receiver's shape matches the shape
+            " cached on this instruction, read values[cached offset] directly -
+            " no hashing. On a miss, resolve the offset and refresh the cache.
+            DATA(ls_gfo) = <a>.
+            DATA lv_goff TYPE i.
+            IF <c>-b = ls_gfo-obj->shape_id.
+              lv_goff = <c>-c.
+            ELSE.
+              lv_goff = ls_gfo-obj->offset_of( <c>-a ).
+              <c>-b = ls_gfo-obj->shape_id.
+              <c>-c = lv_goff.
+            ENDIF.
+            IF lv_goff = 0.
+              CLEAR <a>.
+            ELSE.
+              READ TABLE ls_gfo-obj->values INDEX lv_goff INTO DATA(ls_gfv).
+              IF ls_gfv-type = zif_mjs=>c_type_getter.
+                <a> = call_function( ir_fn = ls_gfv-fn it_args = VALUE #( ) io_env = io_env is_this = ls_gfo ).
+              ELSE.
+                <a> = ls_gfv.
+              ENDIF.
+            ENDIF.
+          ELSE.
+            <a> = eval_property_access( is_obj = <a> iv_prop = <c>-s iv_atom = <c>-a io_env = io_env ).
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_get_index.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <b>.   " key
+          lv_sp = lv_sp - 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.   " object
+          DATA(ls_ixo) = <a>.
+          <a> = eval_property_access( is_obj = ls_ixo iv_prop = zcl_mjs_val=>to_string( <b> ) io_env = io_env ).
+
+        WHEN zif_mjs=>c_op_call_method.
+          DATA lt_margs TYPE zif_mjs=>tt_value_slots.
+          CLEAR lt_margs.
+          DATA lv_mbase TYPE i.
+          lv_mbase = lv_sp - <c>-a.       " receiver at mbase, args at mbase+1..sp
+          DATA lv_mk TYPE i.
+          lv_mk = 1.
+          WHILE lv_mk <= <c>-a.
+            READ TABLE lt_stack INDEX lv_mbase + lv_mk INTO DATA(ls_marg).
+            APPEND ls_marg TO lt_margs.
+            lv_mk = lv_mk + 1.
+          ENDWHILE.
+          READ TABLE lt_stack INDEX lv_mbase INTO DATA(ls_recv).
+          lv_sp = lv_mbase - 1.
+          DATA(ls_mres) = eval_method_call( is_obj = ls_recv iv_method = <c>-s
+                                            iv_atom = <c>-b it_args = lt_margs io_env = io_env ).
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          <sv> = ls_mres.
+
+        WHEN zif_mjs=>c_op_set_field.
+          " matches eval_node_member_assign: object -> set_a; function -> create
+          " backing object if needed, set_a, and (for an ident target) write back
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <b>.       " value
+          DATA lv_soi TYPE i.
+          lv_soi = lv_sp - 1.
+          READ TABLE lt_stack INDEX lv_soi ASSIGNING <a>.      " object
+          lv_sp = lv_sp - 2.
+          IF <a>-type = zif_mjs=>c_type_object.
+            " Phase 2 inline cache: overwrite an existing property in place on a
+            " shape hit; otherwise set_a (which may add/transition), then refresh.
+            IF <c>-b = <a>-obj->shape_id AND <c>-c > 0.
+              READ TABLE <a>-obj->values INDEX <c>-c ASSIGNING FIELD-SYMBOL(<sfv>).
+              <sfv> = <b>.
+            ELSE.
+              <a>-obj->set_a( iv_atom = <c>-a is_val = <b> ).
+              <c>-b = <a>-obj->shape_id.
+              <c>-c = <a>-obj->offset_of( <c>-a ).
+            ENDIF.
+          ELSEIF <a>-type = zif_mjs=>c_type_function.
+            IF <a>-obj IS INITIAL.
+              CREATE OBJECT <a>-obj.
+            ENDIF.
+            <a>-obj->set_a( iv_atom = <c>-a is_val = <b> ).
+            IF <c>-s IS NOT INITIAL.
+              io_env->set( iv_name = <c>-s is_val = <a> ).
+            ENDIF.
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_store_slot.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          lv_sp = lv_sp - 1.
+          READ TABLE io_env->slots INDEX <c>-a ASSIGNING <sv>.
+          <sv> = <a>.
+
+        WHEN zif_mjs=>c_op_store_name.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          lv_sp = lv_sp - 1.
+          io_env->set( iv_name = <c>-s is_val = <a> ).
+
+        WHEN zif_mjs=>c_op_incdec.
+          " matches eval_node_incdec: new = old +/- 1 via eval_bin_op,
+          " store back, push old (postfix) or new (prefix)
+          READ TABLE io_env->slots INDEX <c>-a ASSIGNING <sv>.
+          DATA ls_one TYPE zif_mjs=>ty_value.
+          CLEAR ls_one.
+          ls_one-type = zif_mjs=>c_type_number.
+          ls_one-num  = 1.
+          DATA lv_incop TYPE string.
+          IF <c>-b = 1 OR <c>-b = 11.
+            lv_incop = `+`.
+          ELSE.
+            lv_incop = `-`.
+          ENDIF.
+          DATA(ls_old)  = <sv>.
+          DATA(ls_newv) = eval_bin_op( iv_op = lv_incop is_left = ls_old is_right = ls_one io_env = io_env ).
+          <sv> = ls_newv.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING FIELD-SYMBOL(<ir>).
+          IF <c>-b >= 10.
+            <ir> = ls_old.
+          ELSE.
+            <ir> = ls_newv.
+          ENDIF.
+
+        WHEN zif_mjs=>c_op_ret.
+          READ TABLE lt_stack INDEX lv_sp INTO rs_val.
+          RETURN.
+
+        WHEN zif_mjs=>c_op_ret_undef.
+          CLEAR rs_val.
+          RETURN.
+
+        WHEN zif_mjs=>c_op_make_array.
+          DATA lt_arefs TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY.
+          CLEAR lt_arefs.
+          DATA lv_abase TYPE i.
+          lv_abase = lv_sp - <c>-a.
+          DATA lv_ak TYPE i.
+          lv_ak = 1.
+          WHILE lv_ak <= <c>-a.
+            READ TABLE lt_stack INDEX lv_abase + lv_ak INTO DATA(ls_aelem).
+            APPEND zcl_mjs_val=>box_value( ls_aelem ) TO lt_arefs.
+            lv_ak = lv_ak + 1.
+          ENDWHILE.
+          lv_sp = lv_abase + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          <sv> = zcl_mjs_val=>array_val( lt_arefs ).
+
+        WHEN zif_mjs=>c_op_pop.
+          lv_sp = lv_sp - 1.
+
+        WHEN zif_mjs=>c_op_dup.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <a>.
+          lv_sp = lv_sp + 1.
+          READ TABLE lt_stack INDEX lv_sp ASSIGNING <sv>.
+          <sv> = <a>.
+      ENDCASE.
+      lv_ip = lv_ip + 1.
+    ENDWHILE.
+    CLEAR rs_val.
+  ENDMETHOD.
+
   METHOD compile_function.
     FIELD-SYMBOLS <fn> TYPE zif_mjs=>ty_function.
     ASSIGN ir_fn->* TO <fn>.
@@ -387,13 +1319,18 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_next TYPE i VALUE 1.  " 1-based (READ TABLE ... INDEX)
 
     " Params first
-    CLEAR <fn>-param_slots.
+    CLEAR <fn>-param_binds.
     LOOP AT <fn>-params INTO DATA(lv_param).
+      DATA lv_param_ord TYPE i.
+      lv_param_ord = sy-tabix.
       DATA lv_pname TYPE string.
+      DATA lv_is_rest TYPE abap_bool.
       IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
-        lv_pname = lv_param+3.
+        lv_pname   = lv_param+3.
+        lv_is_rest = abap_true.
       ELSE.
-        lv_pname = lv_param.
+        lv_pname   = lv_param.
+        lv_is_rest = abap_false.
       ENDIF.
       READ TABLE lt_map WITH TABLE KEY name = lv_pname TRANSPORTING NO FIELDS.
       IF sy-subrc <> 0.
@@ -403,10 +1340,16 @@ CLASS zcl_mjs IMPLEMENTATION.
         INSERT ls_se INTO TABLE lt_map.
         lv_next = lv_next + 1.
       ENDIF.
-      " Record the param's slot so call_function binds by index; duplicate
-      " param names (sloppy mode) share a slot, so the last argument wins
+      " Precompute the per-call binding plan: slot (duplicate param names in
+      " sloppy mode share a slot, so the last argument wins), rest flag, and
+      " default-value node (unbound when the param has no default).
       READ TABLE lt_map WITH TABLE KEY name = lv_pname ASSIGNING FIELD-SYMBOL(<pse>).
-      APPEND <pse>-slot TO <fn>-param_slots.
+      DATA ls_pbind TYPE zif_mjs=>ty_param_bind.
+      CLEAR ls_pbind.
+      ls_pbind-slot    = <pse>-slot.
+      ls_pbind-is_rest = lv_is_rest.
+      READ TABLE <fn>-default_params INDEX lv_param_ord INTO ls_pbind-dflt.
+      APPEND ls_pbind TO <fn>-param_binds.
     ENDLOOP.
 
     " Walk body to collect var/let/const/function declarations
@@ -644,7 +1587,18 @@ CLASS zcl_mjs IMPLEMENTATION.
         IF <n>-slot_ok = abap_true AND io_env->slot_map IS BOUND.
           READ TABLE io_env->slots INDEX <n>-slot INTO rs_val.
         ELSEIF <n>-str = `this`.
-          rs_val = io_env->get_this( ).
+          " Inline get_this() to avoid a method call on this hot path (~800K/run).
+          " Walks to the nearest env that binds 'this'; rs_val stays undefined
+          " (initial) if none does, matching get_this().
+          DATA lo_this_env TYPE REF TO zcl_mjs_env.
+          lo_this_env = io_env.
+          WHILE lo_this_env IS BOUND.
+            IF lo_this_env->this_bound = abap_true.
+              rs_val = lo_this_env->this_val.
+              EXIT.
+            ENDIF.
+            lo_this_env = lo_this_env->parent.
+          ENDWHILE.
         ELSE.
           DATA lv_ident_found TYPE abap_bool.
           io_env->resolve(
@@ -907,18 +1861,24 @@ CLASS zcl_mjs IMPLEMENTATION.
     ASSIGN ir_node->* TO <n>.
     DATA(ls_maobj) = eval_node( ir_node = <n>-object io_env = io_env ).
     DATA(ls_maval) = eval_node( ir_node = <n>-right io_env = io_env ).
-    DATA lv_maprop TYPE string.
-    lv_maprop = <n>-property.
+    DATA lv_ma_atom TYPE i.
     IF <n>-prop_expr IS BOUND.
-      lv_maprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
+      " computed target obj[expr] = ... - intern the dynamic key
+      lv_ma_atom = zcl_mjs_obj=>atom( zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ) ).
+    ELSE.
+      " static target obj.name = ... - intern once, cache on the node
+      IF <n>-property_atom = 0.
+        <n>-property_atom = zcl_mjs_obj=>atom( <n>-property ).
+      ENDIF.
+      lv_ma_atom = <n>-property_atom.
     ENDIF.
     IF ls_maobj-type = zif_mjs=>c_type_object.
-      ls_maobj-obj->set( iv_key = lv_maprop is_val = ls_maval ).
+      ls_maobj-obj->set_a( iv_atom = lv_ma_atom is_val = ls_maval ).
     ELSEIF ls_maobj-type = zif_mjs=>c_type_function.
       IF ls_maobj-obj IS INITIAL.
         CREATE OBJECT ls_maobj-obj.
       ENDIF.
-      ls_maobj-obj->set( iv_key = lv_maprop is_val = ls_maval ).
+      ls_maobj-obj->set_a( iv_atom = lv_ma_atom is_val = ls_maval ).
       FIELD-SYMBOLS <maon> TYPE zif_mjs=>ty_node.
       ASSIGN <n>-object->* TO <maon>.
       IF sy-subrc = 0 AND <maon>-kind = zif_mjs=>c_node_ident.
@@ -1154,8 +2114,9 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lo_in_env TYPE REF TO zcl_mjs_env.
 
     IF ls_iter_in-type = zif_mjs=>c_type_object AND ls_iter_in-obj IS BOUND.
-      LOOP AT ls_iter_in-obj->props INTO DATA(ls_prop).
-        DATA(ls_key_val) = zcl_mjs_val=>string_val( ls_prop-key ).
+      DATA(lt_forin_entries) = ls_iter_in-obj->entries( ).
+      LOOP AT lt_forin_entries INTO DATA(ls_prop).
+        DATA(ls_key_val) = zcl_mjs_val=>string_val( zcl_mjs_obj=>atom_name( ls_prop-key ) ).
         CREATE OBJECT lo_in_env EXPORTING io_parent = io_env.
         lo_in_env->output = io_env->output.
 
@@ -1379,6 +2340,10 @@ CLASS zcl_mjs IMPLEMENTATION.
     ENDIF.
     DATA lv_method TYPE string.
     lv_method = <n>-property.
+    " intern the method name once, cache it on the node
+    IF <n>-property_atom = 0.
+      <n>-property_atom = zcl_mjs_obj=>atom( <n>-property ).
+    ENDIF.
 
     DATA lt_mc_args TYPE zif_mjs=>tt_value_slots.
     LOOP AT <n>-args INTO DATA(lr_ma2).
@@ -1397,6 +2362,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     rs_val = eval_method_call(
       is_obj    = ls_mcobj
       iv_method = lv_method
+      iv_atom   = <n>-property_atom
       it_args   = lt_mc_args
       io_env    = io_env ).
     RETURN.
@@ -1577,13 +2543,18 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA(ls_paobj) = eval_node( ir_node = <n>-object io_env = io_env ).
     IF <n>-op = `?.` AND ( ls_paobj-type = zif_mjs=>c_type_undefined OR ls_paobj-type = zif_mjs=>c_type_null ).
       rs_val = zcl_mjs_val=>undefined_val( ).
-    ELSE.
+    ELSEIF <n>-prop_expr IS BOUND.
+      " computed access obj[expr] - key is dynamic, use the string API
       DATA lv_paprop TYPE string.
-      lv_paprop = <n>-property.
-      IF <n>-prop_expr IS BOUND.
-        lv_paprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
-      ENDIF.
+      lv_paprop = zcl_mjs_val=>to_string( eval_node( ir_node = <n>-prop_expr io_env = io_env ) ).
       rs_val = eval_property_access( is_obj = ls_paobj iv_prop = lv_paprop io_env = io_env ).
+    ELSE.
+      " static access obj.name - intern the atom once, cache it on the node
+      IF <n>-property_atom = 0.
+        <n>-property_atom = zcl_mjs_obj=>atom( <n>-property ).
+      ENDIF.
+      rs_val = eval_property_access( is_obj = ls_paobj iv_prop = <n>-property
+                                     iv_atom = <n>-property_atom io_env = io_env ).
     ENDIF.
   ENDMETHOD.
 
@@ -1678,10 +2649,11 @@ CLASS zcl_mjs IMPLEMENTATION.
                        is_this = ls_instance ).
       ENDIF.
       " IMPORTANT: don't overwrite this.prop with class methods if we already set them in ctor
-      LOOP AT ls_cls-obj->props ASSIGNING FIELD-SYMBOL(<cp>).
-        IF <cp>-key <> `constructor`.
-          IF ls_instance-obj->has( <cp>-key ) = abap_false.
-            ls_instance-obj->set( iv_key = <cp>-key is_val = <cp>-val ).
+      DATA(lt_cls_entries) = ls_cls-obj->entries( ).
+      LOOP AT lt_cls_entries ASSIGNING FIELD-SYMBOL(<cp>).
+        IF <cp>-key <> zcl_mjs_obj=>atom( `constructor` ).
+          IF ls_instance-obj->has_a( <cp>-key ) = abap_false.
+            ls_instance-obj->set_a( iv_atom = <cp>-key is_val = <cp>-val ).
           ENDIF.
         ENDIF.
       ENDLOOP.
@@ -1714,8 +2686,9 @@ CLASS zcl_mjs IMPLEMENTATION.
       DATA(ls_super_cls) = io_env->get( <n>-op ).
       IF ls_super_cls-type = zif_mjs=>c_type_object AND ls_super_cls-obj IS BOUND.
         ls_clsobj-obj->proto = ls_super_cls-obj.
-        LOOP AT ls_super_cls-obj->props ASSIGNING FIELD-SYMBOL(<sp>).
-          ls_clsobj-obj->set( iv_key = <sp>-key is_val = <sp>-val ).
+        DATA(lt_sc_entries) = ls_super_cls-obj->entries( ).
+        LOOP AT lt_sc_entries ASSIGNING FIELD-SYMBOL(<sp>).
+          ls_clsobj-obj->set_a( iv_atom = <sp>-key is_val = <sp>-val ).
         ENDLOOP.
         ls_super_cls_val = ls_super_cls.
       ENDIF.
@@ -1723,8 +2696,9 @@ CLASS zcl_mjs IMPLEMENTATION.
       DATA(ls_super_expr) = eval_node( ir_node = <n>-left io_env = io_env ).
       IF ls_super_expr-type = zif_mjs=>c_type_object AND ls_super_expr-obj IS BOUND.
         ls_clsobj-obj->proto = ls_super_expr-obj.
-        LOOP AT ls_super_expr-obj->props ASSIGNING FIELD-SYMBOL(<sep>).
-          ls_clsobj-obj->set( iv_key = <sep>-key is_val = <sep>-val ).
+        DATA(lt_se_entries) = ls_super_expr-obj->entries( ).
+        LOOP AT lt_se_entries ASSIGNING FIELD-SYMBOL(<sep>).
+          ls_clsobj-obj->set_a( iv_atom = <sep>-key is_val = <sep>-val ).
         ENDLOOP.
         ls_super_cls_val = ls_super_expr.
       ENDIF.
@@ -1816,7 +2790,11 @@ CLASS zcl_mjs IMPLEMENTATION.
     CASE is_obj-type.
       WHEN zif_mjs=>c_type_object.
         " missing keys read back as undefined (type 0 = initial rs_val)
-        rs_val = is_obj-obj->get( iv_prop ).
+        IF iv_atom > 0.
+          rs_val = is_obj-obj->get_a( iv_atom ).
+        ELSE.
+          rs_val = is_obj-obj->get( iv_prop ).
+        ENDIF.
         IF rs_val-type = zif_mjs=>c_type_getter AND io_env IS BOUND.
           rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env is_this = is_obj ).
         ENDIF.
@@ -1880,7 +2858,8 @@ CLASS zcl_mjs IMPLEMENTATION.
 
   METHOD eval_method_call.
     " check if method is defined on the object it was called on, or its prototype
-    DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method io_env = io_env ).
+    DATA(ls_mval) = eval_property_access( is_obj = is_obj iv_prop = iv_method
+                                          iv_atom = iv_atom io_env = io_env ).
 
     IF ls_mval-type = zif_mjs=>c_type_function AND ls_mval-fn IS BOUND.
       " receiver mutations flow through the shared object reference — no writeback

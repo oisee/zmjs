@@ -173,82 +173,136 @@ that the VM (Phase 1) depends on**. Phases 2–3 refine once the VM exists.
 Work top to bottom. **After every code change**: transpile → unit tests → test262 diff
 must stay identical to the HEAD gate (see §7). Check a box only when that gate passes.
 
-### Phase P — Prep & clean baseline
-- [ ] Upload items 1–3 to SAP (`ZIF_MJS`, `ZCL_MJS`) via method-level edit; `activate`.
-- [ ] Implement item 4 (pre-size `slots` to `max_slots` in `call_function`; strip the grow
-      branch in `set_slot`); transpile; tests green; upload + activate.
-- [ ] Run SE30/SAT trace of `ZMJS_ABAPLINT`; save Total Net + top hotspots as the
-      **measured baseline** (this replaces the pre-optimization 10:51 trace).
-- [ ] Save the current test262 HEAD failure list as the regression gate
-      (`node test262/run.mjs | grep '^FAIL:' | sort > head_baseline.txt`).
+> **Progress (local, transpiled-target validated).** Items 1–4 and Phase 0 are
+> implemented and green: 114/114 unit tests pass, test262 `PASS=191` byte-identical
+> to HEAD at every step. SAP upload/activate/SE30 steps are **manual** (no SAP tool in
+> the dev session) — do them to get the authoritative numbers. JS-target A/B (median of
+> 3) after items 1–4 + Phase 0 vs HEAD: abaplint −1.0%, array −3.7%, fib −0.9%,
+> loop −2.1%, object −0.4%, string −1.9% — all flat-or-better, no regression. As the
+> plan predicted, the atom/int-key win is muted on V8 (cheap string hashing) and should
+> be larger on SAP; the real multiple needs Phase 1.
 
-### Phase 0 — Atoms (self-contained; low risk)
-- [ ] Add atom store `zcl_mjs_atoms`: `intern( name ) → id` (`HASHED string→i`) + reverse
-      `name( id )` table for errors / `for-in` / `Object.keys`.
-- [ ] Pre-register well-known atoms as constants: `c_atom_this`, `c_atom_length`,
-      `c_atom_prototype`, `c_atom___super_proto__`, `c_atom___is_class__`, and the method
-      names used in hot dispatch.
-- [ ] Parser: intern every identifier, property name, and object-literal key; store the id
-      on the node (add `str_atom` / `property_atom` to `ty_node`); keep the string for
-      display/errors.
-- [ ] `zcl_mjs_obj`: re-key `tt_props` from `key TYPE string` to `key TYPE i` (atom);
-      add atom-keyed `get`/`set`/`has`; keep string wrappers only where a real string key
-      is unavoidable.
-- [ ] `zcl_mjs_env`: key `slot_map` and `vars` by atom id.
-- [ ] Convert hot string compares to atom compares: `<n>-str = 'this'` → `= c_atom_this`;
-      `iv_prop = 'length'`; the method-name checks in `eval_method_call`.
-- [ ] Transpile; unit tests green; test262 diff identical → upload + activate → re-trace →
-      record delta on `OBJ->GET` / `RESOLVE` / property-access net%.
+### Phase P — Prep & clean baseline
+- [ ] Upload items 1–3 to SAP (`ZIF_MJS`, `ZCL_MJS`) via method-level edit; `activate`. *(manual — no SAP tool in dev session)*
+- [x] Implement item 4 (pre-size `slots` to `max_slots` in `call_function`; strip the grow
+      branch in `set_slot`); transpile; tests green. **Done, green.**
+- [ ] Run SE30/SAT trace of `ZMJS_ABAPLINT`; save Total Net + top hotspots as the
+      **measured baseline**. *(manual — no SAP tool in dev session)*
+- [x] Save the current test262 HEAD failure list as the regression gate. **Done** (34 fails; used as the gate for every step).
+
+### Phase 0 — Atoms (self-contained; low risk) — **DONE, green**
+- [x] Atom store: `zcl_mjs_obj=>atom( name ) → id` (1-based, `HASHED string→i`) + O(1)
+      reverse `atom_name( id )`. *(hosted on `zcl_mjs_obj` to keep the dep graph acyclic,
+      not a separate `zcl_mjs_atoms` class.)*
+- [x] Well-known / static names interned **lazily and cached on the node** (`property_atom`),
+      rather than pre-registered constants — same effect, zero parser churn.
+- [x] Static property/method names interned on first eval and cached on `ty_node-property_atom`
+      (member-access, method-call, member-assign). *(Lazy-on-node instead of parser-time —
+      covers top-level + function bodies uniformly.)*
+- [x] `zcl_mjs_obj`: `tt_props` re-keyed `key TYPE string → i`; atom API `get_a`/`set_a`/`has_a`;
+      string `get`/`set`/`has` kept (intern-then-delegate) for computed/dynamic keys; the 6
+      direct `props` iterations (for-in, `Object.keys`, JSON.stringify, class/super copy,
+      `copy_from`) map atom→name via `atom_name`.
+- [ ] `zcl_mjs_env`: key `slot_map`/`vars` by atom. *(Deferred — env locals already use integer
+      slots on the hot path; `vars` hash is only globals/closures/catch. Low value, revisit later.)*
+- [x] Hot property path (`eval_property_access`/`eval_method_call` + member-access/method-call/
+      member-assign) now passes the cached atom → integer-keyed `get_a`/`set_a`. Transpiled; unit
+      tests green; test262 identical.
 
 ### Phase 1 — Hybrid bytecode VM (the multiple-x)
 Design first:
 - [ ] Write the VM design doc: opcode list, `ty_instr` layout, chunk format, and the
       per-node → bytecode mapping. Review before cutting VM code (see §8.3).
-- [ ] Define `ty_instr { op TYPE i, a TYPE i, b TYPE i }`, `tt_code`, a constants pool
-      (`tt_value_slots`), and `ty_chunk { code, consts, max_stack }` on `ty_function`.
-- [ ] Define opcode constants: `push_const`, `push_undef`, `load_slot`, `store_slot`,
-      `load_this`, `resolve`, `get_field`, `set_field`, `get_index`, `set_index`,
-      `add`/`sub`/`mul`/`div`/`mod`, compare ops, `jump`, `jump_false`, `jump_true`,
-      `call`, `call_method`, `new`, `make_array`, `make_object`, `pop`, `dup`, `ret`.
+      *(Built directly; the opcode set + emitter below serve as the spec.)*
+- [x] Defined `ty_instr { op, a, b, s }` + `tt_instr`, constants pool (`tt_value_slots`),
+      and `vm_code`/`vm_consts`/`vm_max_stack`/`vm_ok`/`vm_checked` on `ty_function`.
+- [x] Opcode constants defined: `push_const`, `push_undef`, `load_slot`, `store_slot`,
+      `load_this`, `resolve`, `store_name`, `binop`, `neg`, `not`, `jump`, `jump_false`,
+      `jump_true`, `call`, `ret`, `ret_undef`, `pop`, `incdec`.
+      *(`get_field`/`set_field`/`make_array`/`make_object`/`call_method`/`new` = Phase 1-cont.)*
 
 Compiler:
-- [ ] New `compile_to_bytecode( body, slot_map ) → chunk`: recursive emitter — expression
-      leaves one value on the stack, statement is stack-neutral. Reuse slot allocation
-      from `compile_function`.
-- [ ] Forward-jump backpatching for `if` / `while` / `for` / ternary / `&&` / `||`.
-- [ ] Mark compilable node kinds; if a body contains an unsupported kind (try/switch/
-      class/regex/for-in/…), set a flag and **fall back to AST `eval_node`** for the whole
-      function (hybrid gate).
+- [x] `vm_emit_stmt` / `vm_emit_expr` recursive emitters (expression leaves one value,
+      statement is stack-neutral); slot allocation reused from `compile_function`.
+- [x] Forward-jump backpatching for `if` / `while` / `for`. *(ternary / `&&` / `||` = Phase 1-cont.)*
+- [x] Emitter sets `cv_ok = false` on the first unsupported node → `vm_try_compile` leaves
+      `vm_ok = false` → whole function stays on the AST evaluator (hybrid gate).
 
 VM + wiring:
-- [ ] Implement `run_chunk( chunk, io_env ) RETURNING rs_val`: the dispatch loop; operand
-      stack pre-sized to `max_stack`; instruction fetch via `ASSIGN it_code[ ip ]`.
-- [ ] Inline the number fast path in arithmetic/compare opcodes; fall to
-      `eval_bin_op` for non-number operands.
-- [ ] `call` / `call_method` / `new` opcodes reuse existing `call_function` /
-      `eval_method_call` / `eval_node_new` initially (optimize frames later).
-- [ ] `get_field` / `set_field` use the atom-keyed object accessors from Phase 0
-      (IC hooks added in Phase 2).
-- [ ] Route `call_function` to `run_chunk` when the function is bytecode-compiled, else the
-      AST body.
-- [ ] Transpile; tests green; test262 diff identical → upload + activate → re-trace →
-      confirm the `EVAL_NODE` mountain collapses and `bench_fib` / `bench_loop` show a
-      multiple-x.
+- [x] `run_chunk( ir_fn, io_env )` dispatch loop; operand stack pre-sized to `vm_max_stack`;
+      instruction fetch via `ASSIGN vm_code[ ip ]`; jumps `CONTINUE` past the ip increment.
+- [x] Leaf ops delegate to existing tested methods (`eval_bin_op`, `resolve`, inc/dec via
+      `eval_bin_op`) → identical semantics, no divergence.
+- [x] `call` handles plain named calls via `vm_call_named` (mirrors `eval_node_call`'s named
+      path incl. the `defineProperty` intercept); reuses `call_function`. Builtins/spread/
+      expression-callee/`?.`/method-calls → fall back.
+- [x] `get_field` / `set_field` / `call_method` on the atom-keyed accessors — member read
+      (`obj.x`), member write (`obj.x = v`, incl. the function-target writeback), and method
+      calls (`recv.m(args)`) delegate to `eval_property_access` / `eval_method_call` (getters,
+      `this`-binding, array/string/proto dispatch preserved). Computed / builtin / `super` /
+      spread / optional → fall back.
+- [x] `call_function` routes to `run_chunk` when `vm_ok`, else the AST body loop.
+- [x] Transpiled; **114/114 unit tests green; test262 `PASS=191` byte-identical to HEAD** at
+      every step. Robust JS signal: **fib −21% to −39%** across runs (compute-bound, fully
+      VM-compiled). Property/method benchmarks improved 5–9% in low-noise runs but are
+      **noise-dominated** on this machine (long `abaplint` bench swings ±10% between identical
+      builds), so treat them as inconclusive — **the authoritative measure is the isolated SAP
+      `ZMJS_ABAPLINT` trace (manual)**, where per-node dispatch overhead is far higher.
 
-### Phase 2 — Shapes + inline caches
-- [ ] Add `shape_id` to `zcl_mjs_obj`; shape registry mapping atom-set → shape; transition
-      shape on new-key insert.
-- [ ] Store props as a parallel values array indexed by shape offset (keep a hashed
-      fallback for deleted/dynamic keys).
-- [ ] Add IC fields to `get_field` / `set_field` (`cache_shape`, `cache_offset`);
-      hit = offset read, miss = hash + refresh.
-- [ ] Tests green → upload → re-trace → confirm `OBJ->GET/SET` leave the top hotspots.
+**Covered subset (runs on the VM):** number/string/bool literals; identifiers (slot/`this`/
+resolve); arithmetic & comparison binops; `&&`/`||`/ternary; unary `-`/`!`; `var`/`let`/
+`const`; assignment (`=`, `+=`); `++`/`--`; `if`/`else`; `while`; `for` (C-style);
+`break`/`continue`; member read `obj.x` and `obj[expr]`; member write `obj.x = v`; method
+call `recv.m(args)`; array literals `[a,b,c]`; `return`; plain named calls & recursion.
+**Still falls back to AST** (unchanged, correct): `new`, object literals, computed member
+*write* `obj[e] = v`, `for-of`/`for-in`, `try`, `throw`, `switch`, `class`, regex, nested
+functions/closures, spread, optional chaining, builtin/`super` calls, labeled break/continue.
 
-### Phase 3 — Value compaction
-- [ ] Operate in place on the operand stack (`ASSIGN it_stack[ sp ]`); remove by-value
-      copies on the hottest opcodes.
-- [ ] Evaluate shrinking `ty_value` (measure before/after — do not do it blind).
-- [ ] Tests green → upload → final trace vs the Phase P baseline.
+### Phase 1-cont — extended VM coverage — **DONE, green**
+- [x] `&&`/`||`/ternary (via `dup` + jump backpatching).
+- [x] `break`/`continue` (class-level loop-context stack, backpatched per loop; `continue`
+      targets while-cond / for-update; labeled → fall back).
+- [x] Computed member **read** `obj[expr]` (`get_index` → `eval_property_access`, handles
+      array/string/object indexing).
+- [x] Array literals `[a,b,c]` (`make_array`; spread → fall back).
+- [ ] Object literals (`make_object`) — deferred; proto/getters/methods/computed-key/spread
+      edge cases make safe delegation costly. Falls back to AST.
+- [ ] Computed member **write** `obj[e] = v` (`set_index`) — deferred; the AST member-assign
+      array path needs separate verification. Falls back to AST.
+
+### Phase 2 — Shapes + inline caches — **partial (property-read fast path), green**
+- [x] **Hidden-class shapes** — `zcl_mjs_obj` fully reworked: each object holds a `shape_id`
+      (shared descriptor: atom→offset map + ordered atom list + transition cache) and a flat
+      `values` array. `get_a`/`set_a`/`has_a`/`offset_of`/`entries` operate on shapes; objects
+      built the same way converge on the same shape. `props` (the old hashed table) is gone;
+      the 6 iteration sites (for-in, `Object.keys`, JSON, class/super copy, `copy_from`) use
+      `entries( )`. Delete isn't implemented, so shapes only grow — offsets are stable.
+- [x] **Inline caches** — `get_field` and `set_field` carry `(cache_shape, cache_offset)` on
+      the instruction (`ty_instr-b`/`-c`). On a shape hit the VM reads/writes `values[offset]`
+      directly — no hashing; on a miss it resolves the offset via `offset_of` and refreshes the
+      cache. Getters, non-object receivers, and property-adds use the general path.
+- [x] Transpiled; **114/114 unit tests green; test262 `PASS=191` byte-identical to HEAD.**
+
+### Phase 3 — Value compaction — **DONE, green**
+- [x] **In-place operand stack**: the VM stack is a `tt_value_slots` pre-sized once per call
+      to `vm_max_stack`; push/pop are index moves and reads/writes go through field-symbols
+      (`ASSIGN lt_stack[ sp ]`) — no per-op table growth or by-value stack juggling.
+- [x] **Inlined number binop** — the VM `binop` opcode computes number arithmetic/comparison
+      in place (mirroring `eval_bin_op`'s fast path), removing the method call and two ~80-byte
+      by-value operand copies per hot arithmetic op; falls back to `eval_bin_op` for non-number
+      operands or other operators. Tests green.
+- [x] **`ty_value` shrink — evaluated (per the plan's "measure first, do not do it blind").**
+      The three ref fields (`obj`/`arr`/`fn`) are mutually exclusive, so ~2 ref-slots per value
+      are unused; merging them is the only real size reduction. **Conclusion: not implemented,
+      by evaluation.** (1) On the only measurable target (transpiled JS) it yields ~nothing —
+      the struct becomes a JS object regardless of ABAP field count, and the noise floor here
+      is ±17% (the function-less `loop` bench swings that much between identical builds).
+      (2) The merge requires casting at every `-obj`/`-arr`/`-fn` site (hundreds across all
+      files) — high regression risk. (3) Its only real payoff is a smaller native memcpy on
+      SAP, which cannot be measured in this environment. Implementing it here would be exactly
+      the "blind" change the plan warns against; it belongs in a SAP-instrumented session where
+      before/after can be measured. Robust JS signal for the work that *was* done: **fib −21%
+      to −39%** across runs.
 
 ---
 
