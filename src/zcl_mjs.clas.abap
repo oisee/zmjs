@@ -286,15 +286,18 @@ CLASS zcl_mjs IMPLEMENTATION.
       lo_call_env->this_val = io_env->get_this( ).
     ENDIF.
 
-    " Bind params to slots (fast path: direct index write)
+    " Bind params directly by slot index (resolved in compile_function),
+    " skipping the per-param name hash lookup that define( ) needed
     DATA lv_idx TYPE i VALUE 1.
     DATA lv_nargs TYPE i.
     lv_nargs = lines( it_args ).
     LOOP AT <fn>-params INTO DATA(lv_param).
-      DATA lv_pname TYPE string.
+      DATA lv_param_idx TYPE i.
+      lv_param_idx = sy-tabix.
+      DATA lv_pslot TYPE i.
+      READ TABLE <fn>-param_slots INDEX lv_param_idx INTO lv_pslot.
       IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
         " Rest parameter: collect remaining args into array
-        lv_pname = lv_param+3.
         DATA lt_rest TYPE zif_mjs=>tt_value_slots.
         DATA lv_ri TYPE i.
         lv_ri = lv_idx.
@@ -306,14 +309,10 @@ CLASS zcl_mjs IMPLEMENTATION.
           ENDIF.
           lv_ri = lv_ri + 1.
         ENDWHILE.
-        lo_call_env->define( iv_name = lv_pname is_val = array_from_slots( lt_rest ) ).
+        lo_call_env->set_slot( iv_slot = lv_pslot is_val = array_from_slots( lt_rest ) ).
         EXIT.
-      ELSE.
-        lv_pname = lv_param.
       ENDIF.
       DATA ls_pval TYPE zif_mjs=>ty_value.
-      DATA lv_param_idx TYPE i.
-      lv_param_idx = sy-tabix.
       CLEAR ls_pval.  " default: undefined
       READ TABLE it_args INDEX lv_idx INTO ls_pval.
       " If arg is missing or explicitly undefined, check for a default expression
@@ -324,7 +323,7 @@ CLASS zcl_mjs IMPLEMENTATION.
           ls_pval = eval_node( ir_node = lr_dflt_node io_env = lo_call_env ).
         ENDIF.
       ENDIF.
-      lo_call_env->define( iv_name = lv_pname is_val = ls_pval ).
+      lo_call_env->set_slot( iv_slot = lv_pslot is_val = ls_pval ).
       lv_idx = lv_idx + 1.
     ENDLOOP.
 
@@ -381,6 +380,7 @@ CLASS zcl_mjs IMPLEMENTATION.
     DATA lv_next TYPE i VALUE 1.  " 1-based (READ TABLE ... INDEX)
 
     " Params first
+    CLEAR <fn>-param_slots.
     LOOP AT <fn>-params INTO DATA(lv_param).
       DATA lv_pname TYPE string.
       IF strlen( lv_param ) > 3 AND lv_param(3) = `...`.
@@ -396,6 +396,10 @@ CLASS zcl_mjs IMPLEMENTATION.
         INSERT ls_se INTO TABLE lt_map.
         lv_next = lv_next + 1.
       ENDIF.
+      " Record the param's slot so call_function binds by index; duplicate
+      " param names (sloppy mode) share a slot, so the last argument wins
+      READ TABLE lt_map WITH TABLE KEY name = lv_pname ASSIGNING FIELD-SYMBOL(<pse>).
+      APPEND <pse>-slot TO <fn>-param_slots.
     ENDLOOP.
 
     " Walk body to collect var/let/const/function declarations

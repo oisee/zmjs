@@ -156,6 +156,9 @@ INTERFACE zif_mjs PUBLIC.
       " Hoisted function declarations, collected once at compile time so
       " call_function does not rescan the whole body on every call
       hoisted         TYPE STANDARD TABLE OF REF TO data WITH DEFAULT KEY,
+      " Per-param slot number (parallel to params), resolved at compile time
+      " so call_function binds arguments by index without name hashing
+      param_slots     TYPE STANDARD TABLE OF i WITH DEFAULT KEY,
     END OF ty_function.
 
 ENDINTERFACE.
