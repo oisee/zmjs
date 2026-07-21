@@ -225,8 +225,8 @@ CLASS zcl_mjs_env IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD set_slot.
-    " slots are not pre-populated: grow to the written index on demand
-    " (a missing index reads as undefined, matching JS semantics)
+    " Grow the slot table to the written index on demand (slots are not
+    " pre-sized: pre-sizing every call regressed call-heavy workloads).
     IF iv_slot > lines( slots ).
       DATA ls_undef TYPE zif_mjs=>ty_value.
       DO iv_slot - lines( slots ) TIMES.
