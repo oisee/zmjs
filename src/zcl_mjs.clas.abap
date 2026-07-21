@@ -2528,8 +2528,20 @@ CLASS zcl_mjs IMPLEMENTATION.
       IF <n>-property_atom = 0.
         <n>-property_atom = zcl_mjs_obj=>atom( <n>-property ).
       ENDIF.
-      rs_val = eval_property_access( is_obj = ls_paobj iv_prop = <n>-property
-                                     iv_atom = <n>-property_atom io_env = io_env ).
+      IF ls_paobj-type = zif_mjs=>c_type_object AND ls_paobj-obj IS BOUND.
+        " inline the object read (skip eval_property_access + get_a method
+        " calls); getters and non-object receivers use the general path
+        READ TABLE ls_paobj-obj->props WITH TABLE KEY key = <n>-property_atom ASSIGNING FIELD-SYMBOL(<map>).
+        IF sy-subrc = 0.
+          rs_val = <map>-val.
+          IF rs_val-type = zif_mjs=>c_type_getter.
+            rs_val = call_function( ir_fn = rs_val-fn it_args = VALUE #( ) io_env = io_env is_this = ls_paobj ).
+          ENDIF.
+        ENDIF.
+      ELSE.
+        rs_val = eval_property_access( is_obj = ls_paobj iv_prop = <n>-property
+                                       iv_atom = <n>-property_atom io_env = io_env ).
+      ENDIF.
     ENDIF.
   ENDMETHOD.
 
@@ -2767,7 +2779,11 @@ CLASS zcl_mjs IMPLEMENTATION.
       WHEN zif_mjs=>c_type_object.
         " missing keys read back as undefined (type 0 = initial rs_val)
         IF iv_atom > 0.
-          rs_val = is_obj-obj->get_a( iv_atom ).
+          " inline the atom-keyed read - skips the get_a method call
+          READ TABLE is_obj-obj->props WITH TABLE KEY key = iv_atom ASSIGNING FIELD-SYMBOL(<epa>).
+          IF sy-subrc = 0.
+            rs_val = <epa>-val.
+          ENDIF.
         ELSE.
           rs_val = is_obj-obj->get( iv_prop ).
         ENDIF.
